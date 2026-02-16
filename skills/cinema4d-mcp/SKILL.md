@@ -122,6 +122,24 @@ c4d.MG_GRID_MODE: 0=Endpoint (total span), 1=Per Step (spacing)
 
 **NOT accessible without RS:** node graph internals, RS lights/environment, RS API IDs.
 
+### RS Color Workaround
+RS node graph colors aren't extractable via C4D Python API. Use material preview bitmaps to identify colors:
+```python
+bmp = mat.GetPreview(0)
+if bmp:
+    color = bmp.GetPixel(x, y)  # sample center or representative pixel
+```
+Or use per-sphere toggles in the renderer to visually verify material assignments.
+
+## Clone-to-Material Mapping
+
+Use `MODATA_CLONE` array from `GeGetMoData()` to get normalized clone indices (0.0–1.0 mapped to child objects):
+```python
+md = mo.GeGetMoData(cloner)
+clone_indices = md.GetArray(c4d.MODATA_CLONE)  # float array, 0.0–1.0
+```
+These values map to the cloner's child object cycle. **Verify visually** — don't assume the cycle matches hierarchy order.
+
 ## Known Errors & Workarounds
 
 See [references/errors.md](references/errors.md) for complete Python API and MCP tool error tables.
