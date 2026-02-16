@@ -37,6 +37,26 @@ Cinema 4D MCP expert for extracting scene data, writing C4D Python scripts, and 
 - Redshift availability matrix
 - Timeout management and chunked baking strategies
 
+### blender-mcp
+
+Blender MCP expert for scene inspection, Python scripting, GLTF export, and material/animation extraction.
+
+**Use when:**
+- Using Blender MCP tools (`get_scene_info`, `execute_python`, `screenshot`, etc.)
+- Writing Blender Python scripts for scene extraction or manipulation
+- Exporting scenes to GLTF/GLB for web (Three.js, R3F)
+- Debugging material or texture export losses
+- Optimizing GLB files with gltf-transform
+- Using asset integrations (PolyHaven, Sketchfab, Hyper3D Rodin, Hunyuan3D)
+
+**Covers:**
+- 7 critical rules (export timeouts, modifier handling, Draco pitfalls, name mapping, etc.)
+- Scene hierarchy, material, and animation extraction patterns
+- Headless CLI export (bypasses MCP timeout)
+- Material export survival matrix (what survives GLTF, what doesn't)
+- Texture optimization pipeline (resize → WebP → Draco)
+- Known error tables with fixes (MCP, export, Python API, texture paths)
+
 ## Adding Skills
 
 Each skill lives in `skills/<skill-name>/` with a required `SKILL.md` and optional `references/`, `scripts/`, and `assets/` directories.
