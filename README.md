@@ -57,6 +57,22 @@ Blender MCP expert for scene inspection, Python scripting, GLTF export, and mate
 - Texture optimization pipeline (resize → WebP → Draco)
 - Known error tables with fixes (MCP, export, Python API, texture paths)
 
+### time-lens
+
+Analyze and visualize time spent on software projects by combining data from multiple sources: WakaTime coding time, git commit session detection, Claude Code usage, and Codex CLI usage.
+
+**Use when:**
+- Analyzing work hours or calculating time spent on a project
+- Generating a work hours report or visualizing coding activity
+- Creating a project time breakdown
+- Summarizing development effort across date ranges
+
+**Covers:**
+- 4 data sources: WakaTime API, git sessions, Claude Code prompts, Codex CLI prompts
+- Interactive HTML dashboard (dark-themed, Chart.js)
+- Markdown report with ASCII charts
+- Reconciliation logic across overlapping sources
+
 ## Adding Skills
 
 Each skill lives in `skills/<skill-name>/` with a required `SKILL.md` and optional `references/`, `scripts/`, and `assets/` directories.
