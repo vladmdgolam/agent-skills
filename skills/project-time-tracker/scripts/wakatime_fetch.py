@@ -95,6 +95,48 @@ def fetch_summaries(api_key, start, end, project=None):
     }
 
 
+def fetch_durations(api_key, start, end, project=None):
+    """
+    Fetch coding duration intervals from the /durations API.
+    Each entry has `time` (epoch start) and `duration` (seconds).
+    Returns list of [start_epoch, end_epoch] intervals for union computation.
+
+    Note: /durations requires one request per day, so this iterates over the date range.
+    """
+    intervals = []
+    current = datetime.strptime(start, "%Y-%m-%d")
+    end_dt = datetime.strptime(end, "%Y-%m-%d")
+
+    while current <= end_dt:
+        date_str = current.strftime("%Y-%m-%d")
+        params = {"date": date_str}
+        if project:
+            params["project"] = project
+        data = api_request("/users/current/durations", api_key, params)
+
+        if "error" not in data:
+            for entry in data.get("data", []):
+                t = entry.get("time", 0)
+                d = entry.get("duration", 0)
+                if t and d > 0:
+                    intervals.append([t, t + d])
+
+        current += timedelta(days=1)
+
+    # Merge adjacent/overlapping intervals (WakaTime may have per-file splits)
+    if not intervals:
+        return intervals
+    intervals.sort()
+    merged = [intervals[0]]
+    for s, e in intervals[1:]:
+        if s <= merged[-1][1] + 60:  # 60s tolerance for file switches
+            merged[-1][1] = max(merged[-1][1], e)
+        else:
+            merged.append([s, e])
+
+    return merged
+
+
 def main():
     parser = argparse.ArgumentParser(description="Fetch WakaTime coding stats")
     parser.add_argument("--start", required=True, help="Start date YYYY-MM-DD")
@@ -108,6 +150,36 @@ def main():
         sys.exit(1)
 
     result = fetch_summaries(api_key, args.start, args.end, args.project)
+
+    # Also fetch duration intervals for union computation
+    # Only do this for active days to avoid hammering the API for empty days
+    active_dates = [d["date"] for d in result.get("daily", [])] if "error" not in result else []
+    all_intervals = []
+    for date_str in active_dates:
+        params = {"date": date_str}
+        if args.project:
+            params["project"] = args.project
+        data = api_request("/users/current/durations", api_key, params)
+        if "error" not in data:
+            for entry in data.get("data", []):
+                t = entry.get("time", 0)
+                d = entry.get("duration", 0)
+                if t and d > 0:
+                    all_intervals.append([t, t + d])
+
+    # Merge adjacent per-file intervals
+    if all_intervals:
+        all_intervals.sort()
+        merged_intervals = [all_intervals[0]]
+        for s, e in all_intervals[1:]:
+            if s <= merged_intervals[-1][1] + 60:
+                merged_intervals[-1][1] = max(merged_intervals[-1][1], e)
+            else:
+                merged_intervals.append([s, e])
+        result["intervals"] = merged_intervals
+    else:
+        result["intervals"] = []
+
     print(json.dumps(result, indent=2))
 
 

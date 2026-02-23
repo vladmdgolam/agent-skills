@@ -58,7 +58,7 @@ If confirmed, re-run with `--project-path /old/path` and merge timestamps from b
 
 ### 3. Reconcile hours
 
-**Merged total = best estimate** (git ∪ Claude ∪ Codex sessions, no double-counting):
+**Merged total = best estimate** (git ∪ Claude ∪ Codex ∪ WakaTime intervals, no double-counting):
 
 ```python
 GAP_H = 1.5  # hours between events → new session
@@ -66,30 +66,32 @@ GAP_H = 1.5  # hours between events → new session
 # 1. Collect intervals from git (start/end per session, converted to UTC epoch)
 # 2. Collect intervals from Claude timestamps (detect sessions via gap threshold)
 # 3. Collect intervals from Codex timestamps (same gap threshold)
-# 4. Combine all intervals into one list, sort by start
-# 5. Merge overlapping/adjacent intervals:
+# 4. Collect intervals from WakaTime "intervals" field (already [start, end] pairs in UTC epoch)
+# 5. Combine all intervals into one list, sort by start
+# 6. Merge overlapping/adjacent intervals:
 #    for each interval, if next.start - cur.end <= GAP_H * 3600 → extend current
-# 6. For each merged interval: est = max(end - start + 0.5h, 0.5h)
-# 7. total = Σ est
+# 7. For each merged interval: est = max(end - start + 0.5h, 0.5h)
+# 8. total = Σ est
 
-# Converting to UTC:
-# - git_sessions.py: times are in committer's local timezone; use `git log --format="%aI"`
-#   to get ISO timestamps with offset, then convert to UTC epoch
-# - claude_messages.py "timestamps" field: already UTC epoch floats
-# - codex_messages.py "timestamps" field: already UTC epoch floats
+# Data formats (all UTC epoch floats):
+# - git_sessions.py: convert local times using timezone offset from git log
+# - claude_messages.py "timestamps": point events → detect sessions via gap
+# - codex_messages.py "timestamps": point events → detect sessions via gap
+# - wakatime_fetch.py "intervals": already [start_epoch, end_epoch] pairs
+#   (fetched from /durations API, per-file intervals pre-merged with 60s tolerance)
 ```
 
-Why merge matters: AI agent prompts (Claude/Codex) often appear minutes before/after git commits in the same work session. A user might research with Claude, write code, then commit — all one session. Union captures the true session boundaries without double-counting overlap.
+Why merge matters: AI agent prompts (Claude/Codex) often appear minutes before/after git commits in the same work session. WakaTime captures IDE keystrokes that may fall between commits. A user might research with Claude, write code (WakaTime), then commit (git) — all one session. Union of all four sources captures the true session boundaries without double-counting.
 
-- WakaTime = lower bound (active IDE keystrokes only, does not affect merged calculation)
-- Present merged total, git-only, and WakaTime in output for comparison
+- The merged total replaces "git-only" as the primary estimate
+- WakaTime hours shown for reference (active keystrokes only, always lower)
 
 ### 4. Generate HTML dashboard
 
 Write a single-file HTML with inline Chart.js (CDN). Dark theme (`#0a0a0a` bg, `#1a1a1a` cards).
 
 Required sections:
-1. **Stat cards** — Merged total (git∪claude∪codex), Git estimate, WakaTime, Sessions, Commits, Claude prompts, Codex prompts
+1. **Stat cards** — Merged total (git∪claude∪codex∪waka), Git estimate, WakaTime, Sessions, Commits, Claude prompts, Codex prompts
 2. **Daily activity chart** — Overlapping bars (git + WakaTime + merged) + AI prompts line on secondary axis
 3. **Gantt timeline** — UTC horizontal bars; git, Claude, and Codex as separate colored datasets on same chart (separate swimlane rows when they overlap on same day)
 4. **Data table** — Session | Time (UTC) | Active | Est. | WakaTime | Claude | Codex | Commits
