@@ -56,6 +56,8 @@ python3 codex_messages.py --project-path /abs/path/to/repo
 
 If confirmed, re-run with `--project-path /old/path` and merge timestamps from both paths.
 
+See [references/folder-move-detection.md](references/folder-move-detection.md) for full detection logic and edge cases.
+
 ### 3. Reconcile hours
 
 **Merged total = best estimate** (git ∪ Claude ∪ Codex ∪ WakaTime intervals, no double-counting):
@@ -85,6 +87,8 @@ Why merge matters: AI agent prompts (Claude/Codex) often appear minutes before/a
 
 - The merged total replaces "git-only" as the primary estimate
 - WakaTime hours shown for reference (active keystrokes only, always lower)
+
+See [references/reconciliation.md](references/reconciliation.md) for full pseudocode, the session detection function, and the hour estimate formula.
 
 ### 4. Generate HTML dashboard
 
@@ -148,30 +152,179 @@ ASCII bar: `blocks = round(hours / max_hours * 20)`, `█` filled, `░` empty, 
 
 Save as `<project-dir>/total_hours.md`.
 
+---
+
+## Validation Checklist
+
+### Before running
+
+- [ ] **WakaTime API key** — `~/.wakatime.cfg` exists and contains `api_key = waka_...` under `[settings]`. Run `cat ~/.wakatime.cfg` to verify. If missing, the WakaTime script will fail silently or with an auth error.
+- [ ] **Git repo accessible** — the project directory is a git repo with commits (`git log --oneline -5 /path/to/repo` returns results). If not, `git_sessions.py` will return 0 sessions.
+- [ ] **Claude history exists** — `~/.claude/history.jsonl` is present and non-empty, OR `~/.claude/projects/` contains session files for the project. If both are missing, Claude hours will be 0.
+- [ ] **Date range is valid** — `--since` is before `--until`; the range covers dates when work actually happened.
+
+### After generation
+
+- [ ] **HTML loads without errors** — open `work-hours-analysis.html` in a browser; all charts render; no JS console errors.
+- [ ] **Total hours match** — the "Merged total" stat card in HTML equals the "Estimated Total Working Hours" in `total_hours.md` (allow ±0.01h for rounding).
+- [ ] **Date range matches input** — the first and last dates in the data table and the Timeline section match the requested `--since`/`--until` values.
+- [ ] **Session count non-zero** — at least one source contributed sessions. If all sources return 0, something is wrong (wrong path, wrong project name, date range outside project history).
+
+---
+
+## Examples
+
+### Example 1: Single repo, standard report
+
+**Trigger phrase:** "How many hours did I spend on the api-server project this month? Generate the full report."
+
+**Actions:**
+
+1. Determine scope: project at `/Users/alice/code/api-server`, date range inferred as 2026-02-01 → 2026-02-23 (current month to today).
+
+2. Extract data:
+   ```bash
+   python3 git_sessions.py /Users/alice/code/api-server --since 2026-02-01 --until 2026-02-23
+   python3 wakatime_fetch.py --start 2026-02-01 --end 2026-02-23 --project api-server
+   python3 claude_messages.py --project-path /Users/alice/code/api-server
+   python3 codex_messages.py --project-path /Users/alice/code/api-server
+   ```
+
+3. Reconcile: `git_sessions.py` returns 14 sessions (22.5h), WakaTime returns 11.2h, Claude returns 47 prompts across 9 days, Codex returns 0 (not used on this project). Merged total after union + gap merging: **26.3h**.
+
+4. Generate `work-hours-analysis.html` and `total_hours.md` in `/Users/alice/code/api-server/`.
+
+**Result:** "You spent approximately **26.3 hours** on api-server in February 2026 (14 git sessions, 47 Claude prompts, WakaTime reference: 11.2h active typing). Report saved to `/Users/alice/code/api-server/work-hours-analysis.html`."
+
+---
+
+### Example 2: Multi-repo project with folder move
+
+**Trigger phrase:** "Calculate the total dev time for the marketplace project — it has a frontend and backend repo. Also I think I renamed the folder at some point."
+
+**Actions:**
+
+1. Determine scope: two repos at `/Users/bob/marketplace-backend` and `/Users/bob/marketplace-frontend`, user specifies date range 2025-11-01 → 2026-01-31.
+
+2. Extract data:
+   ```bash
+   python3 git_sessions.py /Users/bob/marketplace-backend --since 2025-11-01 --until 2026-01-31
+   python3 git_sessions.py /Users/bob/marketplace-frontend --since 2025-11-01 --until 2026-01-31
+   python3 wakatime_fetch.py --start 2025-11-01 --end 2026-01-31 --project marketplace
+   python3 claude_messages.py --project-path /Users/bob/marketplace-backend
+   python3 codex_messages.py --project-path /Users/bob/marketplace-backend
+   ```
+
+3. `claude_messages.py` returns 0 results with `alternate_paths: ["/Users/bob/old-market/backend"]`.
+
+4. Ask user: "No Claude history found at `/Users/bob/marketplace-backend`, but found sessions for `backend` at `/Users/bob/old-market/backend`. Was this the previous location? Should I include that history?"
+
+5. User confirms. Re-run: `python3 claude_messages.py --project-path /Users/bob/old-market/backend`. Merge timestamps from both runs.
+
+6. Merge git sessions from both repos (backend + frontend), sort, re-merge within 1.5h gap. Reconcile with all sources.
+
+**Result:** "Total estimated time: **84.7h** across 3 months (backend + frontend combined, including Claude history from the old path `/Users/bob/old-market/backend`)."
+
+---
+
+## Troubleshooting
+
+### WakaTime API key missing or invalid
+
+**Symptom:** `wakatime_fetch.py` exits with an auth error, HTTP 401, or `KeyError: 'api_key'`.
+
+**Fix:**
+1. Check if the config exists: `cat ~/.wakatime.cfg`
+2. If missing, create it:
+   ```ini
+   [settings]
+   api_key = waka_xxxx...
+   ```
+3. Get your key from [wakatime.com/settings/api-key](https://wakatime.com/settings/api-key).
+4. If the key exists but returns 401, it may be expired or revoked — generate a new one.
+
+**Also check:** The `--project` flag matches the project name exactly as WakaTime recorded it (case-sensitive). You can verify project names in the WakaTime dashboard under Projects.
+
+---
+
+### Git returns 0 sessions
+
+**Symptom:** `git_sessions.py` returns `"sessions": []` or `"total_hours": 0`.
+
+**Possible causes and fixes:**
+
+| Cause | Fix |
+|---|---|
+| Date range is outside project history | Check `git log --oneline` for actual date range; adjust `--since`/`--until` |
+| Path is not a git repo | Verify with `git -C /path/to/repo log --oneline -1` |
+| No commits in range by the current user | Pass `--author` flag if filtering by author, or remove it |
+| Shallow clone | Run `git fetch --unshallow` to restore full history |
+
+---
+
+### Claude or Codex returns 0 sessions (no alternate_paths)
+
+**Symptom:** Both `timestamps: []` and `alternate_paths: []`.
+
+**Possible causes and fixes:**
+
+| Cause | Fix |
+|---|---|
+| Claude Code / Codex was not used on this project | Expected — note it in the report |
+| Wrong `--project-path` (typo, symlink, trailing slash) | Use `realpath /path/to/repo` to get the canonical absolute path; pass that |
+| History files don't exist | Check `~/.claude/history.jsonl` and `~/.claude/projects/` exist; check `~/.codex/sessions/` exists |
+| Project path uses a symlink that resolves differently | Use the resolved path: `python3 -c "import os; print(os.path.realpath('/your/path'))"` |
+
+---
+
+### `alternate_paths` found but user says the path is wrong
+
+**Symptom:** The script reports alternate paths but the user says none of them are the old project location.
+
+**Fix:** Fall back to `--filter <project-name>` which does a substring match on directory names rather than an exact path match. Be aware this may pick up unrelated projects with similar names — review the session list with the user before merging.
+
+```bash
+python3 claude_messages.py --filter marketplace
+```
+
+---
+
+### HTML chart renders blank or shows NaN
+
+**Symptom:** The HTML file opens but charts are empty or show "NaN" values.
+
+**Possible causes:**
+- Reconciliation produced `null` or `None` values that were serialized into the JS data arrays.
+- Timestamps were not converted to UTC before writing to HTML (local epoch vs UTC epoch mismatch).
+- Chart.js CDN failed to load (offline environment).
+
+**Fix:**
+1. Open browser DevTools console — the specific JS error pinpoints the issue.
+2. Verify all epoch timestamps are UTC floats, not strings.
+3. For offline environments, download Chart.js and embed it inline: `<script>/* chart.js source */</script>`.
+
+---
+
+### Total hours mismatch between HTML and Markdown
+
+**Symptom:** The HTML stat card shows a different merged total than `total_hours.md`.
+
+**Cause:** The reconciliation was run twice independently and produced slightly different results (e.g., due to floating-point rounding, or one file used stale data).
+
+**Fix:** Run reconciliation once, store the result in a variable, and write the same computed value to both output files. Do not recompute independently for each output.
+
+---
+
 ## Notes
 
-**WakaTime auth:** The script reads the API key automatically from `~/.wakatime.cfg` — no manual setup needed. This file is created by any WakaTime IDE plugin (Cursor, VS Code, etc.) when first installed. To inspect it:
-```bash
-cat ~/.wakatime.cfg   # shows [settings] api_key = waka_xxxx...
-```
-To get your key manually: [wakatime.com/settings/api-key](https://wakatime.com/settings/api-key). Paste it into `~/.wakatime.cfg` under `[settings]` → `api_key = waka_xxxx`.
+**WakaTime auth and config:** The script reads `~/.wakatime.cfg` automatically. Always pass `--project` for per-project data. WakaTime tracks active keystrokes only — always lower than git estimate. Heavy Claude Code usage creates a large gap between WakaTime and actual effort. See [references/data-sources.md](references/data-sources.md) for full auth setup, config format, and limitations.
 
-WakaTime tracks active keystrokes only — always lower than git estimate. Heavy Claude Code usage means large gap between WakaTime and actual effort.
+**Codex CLI data source:** `codex_messages.py` reads `~/.codex/sessions/YYYY/MM/DD/rollup-*.jsonl`. Each file has `session_meta` (first entry with `payload.cwd` + `payload.id`), `event_msg` entries with `payload.type == "user_message"` for actual prompts, and `turn_context` entries for boundaries. Output includes `timestamps` (UTC epoch floats) and `alternate_paths` for folder-move detection. See [references/data-sources.md](references/data-sources.md) for full file structure.
 
-**Codex CLI data source:** `codex_messages.py` reads `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`. Each file has:
-- `session_meta` (first entry): `payload.cwd` = project directory, `payload.id` = session UUID
-- `event_msg` with `payload.type == "user_message"`: actual user prompts (has `payload.message` string + `images`/`text_elements` keys)
-- `event_msg` with `payload.type == "agent_message"`: assistant responses
-- `turn_context`: turn boundaries with cwd, model, etc.
-Output includes `timestamps` (UTC epoch floats) for merged session computation. Also includes folder-move detection via `alternate_paths` when no sessions match.
+**Claude Code data sources:** `claude_messages.py` uses two sources: `~/.claude/history.jsonl` (primary; `project` field = abs path, `timestamp` in ms) and `~/.claude/projects/<encoded>/*.jsonl` (session files; `cwd` field, `type=="user"` entries, ISO timestamps). Encoded dir name format: `/Users/foo/bar` → `-Users-foo-bar`. Always prefer `--project-path` over `--filter`. See [references/data-sources.md](references/data-sources.md) for full field reference.
 
-**Claude Code data sources:** `claude_messages.py` uses two sources:
-1. `~/.claude/history.jsonl` — primary; one entry per submitted prompt with `project` (absolute path) and `timestamp` (ms). Filter by `project == abs_path`.
-2. `~/.claude/projects/<encoded>/*.jsonl` — session files; each entry has `cwd` (absolute path), `type` ("user"/"assistant"), `timestamp` (ISO). Use for sessions that predate history.jsonl. Filter `type=="user"` and exclude `message.content` that is a `list[tool_result]` (those are tool outputs, not prompts).
-Encoded dir name format: `/Users/foo/bar` → `-Users-foo-bar`. Always prefer `--project-path` over `--filter` for accurate matching.
+**Reconciliation algorithm:** Gap threshold is 1.5h. All sources converted to UTC epoch float intervals. Intervals merged if gap ≤ threshold. Per-interval estimate: `max(duration + 0.5h, 0.5h)`. Merged total = Σ estimates. See [references/reconciliation.md](references/reconciliation.md) for full pseudocode and the session detection helper function.
 
-**WakaTime always use `--project`:** Without `--project`, the script returns all-account daily totals which mix multiple projects worked on the same days. Always pass `--project <wakatime-project-name>` to get per-project data.
-
-**Folder move detection:** Both `claude_messages.py` and `codex_messages.py` check for matching project names at different paths when they find 0 results. The output `alternate_paths` field lists candidate old locations. Claude detection scans `history.jsonl` (exact paths) and session file `cwd` fields. Codex detection scans all `session_meta.cwd` fields. If alternates are found, ask the user to confirm, then re-run with the old path and merge all timestamps.
+**Folder move detection:** Both `claude_messages.py` and `codex_messages.py` scan all known history for matching project names when 0 results are found at the provided path. Returns `alternate_paths` list. If non-empty, ask user to confirm, re-run with old path, merge timestamps. See [references/folder-move-detection.md](references/folder-move-detection.md) for detection logic and edge cases.
 
 **Multi-repo projects:** Merge session arrays from multiple `git_sessions.py` runs, re-sort by date, recompute daily totals and grand total.
