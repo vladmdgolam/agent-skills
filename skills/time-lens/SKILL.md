@@ -1,5 +1,5 @@
 ---
-name: project-time-tracker
+name: time-lens
 description: >
   Analyze and visualize time spent on software projects by combining data from multiple
   sources: WakaTime coding time, git commit session detection, Claude Code usage, and
