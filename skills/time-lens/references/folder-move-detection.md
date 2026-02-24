@@ -2,11 +2,11 @@
 
 ## What It Is
 
-Both `claude_messages.py` and `codex_messages.py` include automatic detection of cases where a project directory has been renamed or moved. When the script finds 0 results for the provided path, it scans all known history for project names that partially match the provided path and returns candidate old locations in an `alternate_paths` field.
+`claude_messages.py`, `codex_messages.py`, and `cursor_messages.py` all include automatic detection of cases where a project directory has been renamed or moved. When a script finds 0 results for the provided path, it scans all known history for project names that partially match the provided path and returns candidate old locations in an `alternate_paths` field.
 
 This is important because:
 - Developers frequently rename or reorganize project directories.
-- Claude Code and Codex sessions are indexed by absolute path, so a moved project appears as a completely different project in the history.
+- Claude Code, Codex, and Cursor sessions are indexed by absolute path, so a moved project appears as a completely different project in the history.
 - Without this detection, moved projects would silently show 0 AI session hours.
 
 ---
@@ -26,6 +26,16 @@ The union of both scans, excluding the originally queried path, is returned as `
 ### Codex CLI (`codex_messages.py`)
 
 All `~/.codex/sessions/YYYY/MM/DD/rollup-*.jsonl` files are scanned. The `payload.cwd` from each `session_meta` entry is collected. Any path where the final directory component matches the queried project name is treated as a candidate and returned in `alternate_paths`.
+
+### Cursor IDE (`cursor_messages.py`)
+
+Two scans are performed:
+
+1. **Workspace storage scan:** All `workspace.json` files under `~/Library/Application Support/Cursor/User/workspaceStorage/*/` are read. The `folder` field (a `file://` URI) is converted to an absolute path. Any path where the final directory component matches the queried project name is treated as a candidate.
+
+2. **Global storage scan:** The `cursorDiskKV` table in `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` is queried for `composerData:*` entries. The `workspaceUri` from each entry is compared using the same name-match logic.
+
+The union of both scans, excluding the originally queried path, is returned as `alternate_paths`.
 
 ---
 
@@ -48,7 +58,7 @@ A non-empty `alternate_paths` with an empty `timestamps` list is the trigger con
 
 ## Workflow When `alternate_paths` Is Present
 
-When `claude_messages.py` or `codex_messages.py` return 0 results and `alternate_paths` is non-empty:
+When `claude_messages.py`, `codex_messages.py`, or `cursor_messages.py` return 0 results and `alternate_paths` is non-empty:
 
 1. **Pause and ask the user:**
    > "No Claude/Codex history found at `/current/path`, but found sessions for `project-name` at `/old/path`. Was this project moved? Should I include that history too?"

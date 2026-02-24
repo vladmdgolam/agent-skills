@@ -59,7 +59,7 @@ Blender MCP expert for scene inspection, Python scripting, GLTF export, and mate
 
 ### time-lens
 
-Analyze and visualize time spent on software projects by combining data from multiple sources: WakaTime coding time, git commit session detection, Claude Code usage, and Codex CLI usage.
+Analyze and visualize time spent on software projects by combining data from multiple sources: WakaTime coding time, git commit session detection, Claude Code usage, Codex CLI usage, and Cursor IDE usage.
 
 **Use when:**
 - Analyzing work hours or calculating time spent on a project
@@ -68,7 +68,7 @@ Analyze and visualize time spent on software projects by combining data from mul
 - Summarizing development effort across date ranges
 
 **Covers:**
-- 4 data sources: WakaTime API, git sessions, Claude Code prompts, Codex CLI prompts
+- 5 data sources: WakaTime API, git sessions, Claude Code prompts, Codex CLI prompts, Cursor IDE prompts
 - Interactive HTML dashboard (dark-themed, Chart.js)
 - Markdown report with ASCII charts
 - Reconciliation logic across overlapping sources

@@ -107,3 +107,56 @@ Filter by `session_meta.payload.cwd == abs_path` (or the alternate path if a fol
 ### Output
 
 Same as `claude_messages.py`: a `timestamps` array of UTC epoch floats plus `alternate_paths` if applicable.
+
+---
+
+## Cursor IDE Data Sources
+
+`cursor_messages.py` reads from Cursor's SQLite databases (`.vscdb` files) using two sources.
+
+### Source 1: Global Storage `cursorDiskKV` (primary)
+
+Location (macOS): `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`
+Location (Windows): `%APPDATA%/Cursor/User/globalStorage/state.vscdb`
+Location (Linux): `~/.config/Cursor/User/globalStorage/state.vscdb`
+
+The `cursorDiskKV` table contains key-value pairs:
+
+| Key pattern | Value contents | Purpose |
+|---|---|---|
+| `composerData:{sessionId}` | JSON with `workspaceUri`, `createdAt`, `updatedAt` | Session metadata — `workspaceUri` maps to project path |
+| `bubbleId:{sessionId}:{messageId}` | JSON with `type`, `timingInfo`, `createdAt`, etc. | Per-message data — `type=1` = user message |
+
+**Timestamp extraction priority chain** (per bubble):
+1. `createdAt` — ISO 8601 string (new format, >= Sept 2025)
+2. `timingInfo.clientStartTime` — Unix ms
+3. `timingInfo.clientRpcSendTime` — Unix ms (old format, assistant only)
+4. `timingInfo.clientSettleTime` — Unix ms (old format)
+5. `timingInfo.clientEndTime` — Unix ms
+6. `timestamp` — Unix ms (legacy plain field)
+
+**Project matching:** The `workspaceUri` field in `composerData:{sessionId}` is a `file://` URI (e.g., `file:///Users/alice/code/my-project`). The script converts this to an absolute path and compares against `--project-path`.
+
+### Source 2: Workspace Storage `ItemTable` (fallback)
+
+Location: `~/Library/Application Support/Cursor/User/workspaceStorage/*/state.vscdb`
+
+Each workspace directory also contains a `workspace.json` file with a `folder` field (a `file://` URI) that maps the workspace to its project directory.
+
+The `ItemTable` key-value store contains:
+
+| Key | Value contents | Granularity |
+|---|---|---|
+| `composer.composerData` | JSON with `allComposers` array, each having `composerId`, `createdAt`, `lastUpdatedAt` | Session-level only |
+| `workbench.panel.aichat.view.aichat.chatdata` | Legacy chat format with `chatSessions` → `messages` (has `role`, `timestamp`) | Per-message |
+| `workbench.panel.chat.view.chat.chatdata` | Legacy chat format (alternate key, same structure) | Per-message |
+
+**Use these for**: older Cursor versions that don't have `cursorDiskKV` in global storage, or when the global storage database is unavailable.
+
+### Deduplication
+
+The script collects from global storage first, then falls back to workspace storage, deduplicating by rounded epoch timestamp (same approach as `claude_messages.py`).
+
+### Output
+
+Same as `claude_messages.py` and `codex_messages.py`: a `timestamps` array of UTC epoch floats, `daily` counts, `sessions_found`, and `alternate_paths` for folder-move detection. Also includes `sources` breakdown showing how many messages came from `global_storage` vs `workspace_storage`.

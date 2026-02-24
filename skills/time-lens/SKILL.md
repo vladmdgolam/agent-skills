@@ -2,16 +2,17 @@
 name: time-lens
 description: >
   Analyze and visualize time spent on software projects by combining data from multiple
-  sources: WakaTime coding time, git commit session detection, Claude Code usage, and
-  Codex CLI usage. Produces both an interactive HTML dashboard (dark-themed, Chart.js)
-  and a Markdown report with ASCII charts. Use when the user asks to: analyze work hours,
-  calculate time spent on a project, generate a work hours report, visualize coding
-  activity, create a project time breakdown, or summarize development effort across date ranges.
+  sources: WakaTime coding time, git commit session detection, Claude Code usage,
+  Codex CLI usage, and Cursor IDE usage. Produces both an interactive HTML dashboard
+  (dark-themed, Chart.js) and a Markdown report with ASCII charts. Use when the user
+  asks to: analyze work hours, calculate time spent on a project, generate a work hours
+  report, visualize coding activity, create a project time breakdown, or summarize
+  development effort across date ranges.
 ---
 
 # Project Time Tracker
 
-Combines four data sources → reconciles → produces HTML dashboard + Markdown report.
+Combines five data sources → reconciles → produces HTML dashboard + Markdown report.
 
 ## Scripts
 
@@ -23,6 +24,7 @@ All scripts live in `scripts/` next to this SKILL.md. Run them with `python3`:
 | `wakatime_fetch.py` | WakaTime API → daily hours, filtered to project | `--start YYYY-MM-DD --end YYYY-MM-DD --project name` |
 | `claude_messages.py` | Claude Code user prompts per day + timestamps | `--project-path /abs/path` or `--filter name` |
 | `codex_messages.py` | Codex CLI user prompts per day + timestamps | `--project-path /abs/path` or `--filter name` |
+| `cursor_messages.py` | Cursor IDE user prompts per day + timestamps | `--project-path /abs/path` or `--filter name` |
 
 ## Workflow
 
@@ -51,7 +53,7 @@ Each of these (minus the `/.git` suffix) is a repo to run `git_sessions.py`, `cl
 
 ### 2. Extract data
 
-Run all four scripts on every discovered repo. For git and Claude/Codex, run per sub-repo. For WakaTime, use the multi-project discovery approach described below.
+Run all five scripts on every discovered repo. For git, Claude, Codex, and Cursor, run per sub-repo. For WakaTime, use the multi-project discovery approach described below.
 
 ```bash
 # Git sessions — run per sub-repo
@@ -67,6 +69,11 @@ python3 claude_messages.py --project-path /path/to/project/backend
 python3 codex_messages.py --project-path /path/to/project
 python3 codex_messages.py --project-path /path/to/project/frontend
 python3 codex_messages.py --project-path /path/to/project/backend
+
+# Cursor IDE — same as Claude/Codex
+python3 cursor_messages.py --project-path /path/to/project
+python3 cursor_messages.py --project-path /path/to/project/frontend
+python3 cursor_messages.py --project-path /path/to/project/backend
 ```
 
 **WakaTime multi-project discovery:** WakaTime often tracks sub-directories as separate projects (e.g., a monorepo at `my-project/` may have WakaTime projects named `my-project`, `frontend`, `backend`, `shared`). A single `--project` query will miss the others.
@@ -93,7 +100,7 @@ python3 codex_messages.py --project-path /path/to/project/backend
 
 **Why this matters:** In a project with 4 sub-repos, a single `--project` query captured only 9h of the actual 26.5h of WakaTime data. The other 17.5h was tracked under sub-directory project names.
 
-**Folder move detection:** If `claude_messages.py` or `codex_messages.py` return 0 results, check the output for `alternate_paths`. If present, ask the user:
+**Folder move detection:** If `claude_messages.py`, `codex_messages.py`, or `cursor_messages.py` return 0 results, check the output for `alternate_paths`. If present, ask the user:
 > "No Claude/Codex history found at `/current/path`, but found sessions for `project-name` at `/old/path`. Was this project moved? Should I include that history too?"
 
 If confirmed, re-run with `--project-path /old/path` and merge timestamps from both paths.
@@ -102,7 +109,7 @@ See [references/folder-move-detection.md](references/folder-move-detection.md) f
 
 ### 3. Reconcile hours
 
-**Merged total = best estimate** (git ∪ Claude ∪ Codex ∪ WakaTime intervals, no double-counting):
+**Merged total = best estimate** (git ∪ Claude ∪ Codex ∪ Cursor ∪ WakaTime intervals, no double-counting):
 
 ```python
 GAP_H = 1.5  # hours between events → new session
@@ -110,22 +117,24 @@ GAP_H = 1.5  # hours between events → new session
 # 1. Collect intervals from git (start/end per session, converted to UTC epoch)
 # 2. Collect intervals from Claude timestamps (detect sessions via gap threshold)
 # 3. Collect intervals from Codex timestamps (same gap threshold)
-# 4. Collect intervals from WakaTime "intervals" field (already [start, end] pairs in UTC epoch)
-# 5. Combine all intervals into one list, sort by start
-# 6. Merge overlapping/adjacent intervals:
+# 4. Collect intervals from Cursor timestamps (same gap threshold)
+# 5. Collect intervals from WakaTime "intervals" field (already [start, end] pairs in UTC epoch)
+# 6. Combine all intervals into one list, sort by start
+# 7. Merge overlapping/adjacent intervals:
 #    for each interval, if next.start - cur.end <= GAP_H * 3600 → extend current
-# 7. For each merged interval: est = max(end - start + 0.5h, 0.5h)
-# 8. total = Σ est
+# 8. For each merged interval: est = max(end - start + 0.5h, 0.5h)
+# 9. total = Σ est
 
 # Data formats (all UTC epoch floats):
 # - git_sessions.py: convert local times using timezone offset from git log
 # - claude_messages.py "timestamps": point events → detect sessions via gap
 # - codex_messages.py "timestamps": point events → detect sessions via gap
+# - cursor_messages.py "timestamps": point events → detect sessions via gap
 # - wakatime_fetch.py "intervals": already [start_epoch, end_epoch] pairs
 #   (fetched from /durations API, per-file intervals pre-merged with 60s tolerance)
 ```
 
-Why merge matters: AI agent prompts (Claude/Codex) often appear minutes before/after git commits in the same work session. WakaTime captures IDE keystrokes that may fall between commits. A user might research with Claude, write code (WakaTime), then commit (git) — all one session. Union of all four sources captures the true session boundaries without double-counting.
+Why merge matters: AI agent prompts (Claude/Codex/Cursor) often appear minutes before/after git commits in the same work session. WakaTime captures IDE keystrokes that may fall between commits. A user might research with Claude, use Cursor's AI, write code (WakaTime), then commit (git) — all one session. Union of all five sources captures the true session boundaries without double-counting.
 
 - The merged total replaces "git-only" as the primary estimate
 - WakaTime hours shown for reference (active keystrokes only, always lower)
@@ -137,10 +146,10 @@ See [references/reconciliation.md](references/reconciliation.md) for full pseudo
 Write a single-file HTML with inline Chart.js (CDN). Dark theme (`#0a0a0a` bg, `#1a1a1a` cards).
 
 Required sections:
-1. **Stat cards** — Merged total (git∪claude∪codex∪waka), Git estimate, WakaTime, Sessions, Commits, Claude prompts, Codex prompts
+1. **Stat cards** — Merged total (git∪claude∪codex∪cursor∪waka), Git estimate, WakaTime, Sessions, Commits, Claude prompts, Codex prompts, Cursor prompts
 2. **Daily activity chart** — Overlapping bars (git + WakaTime + merged) + AI prompts line on secondary axis
-3. **Gantt timeline** — UTC horizontal bars; git, Claude, and Codex as separate colored datasets on same chart (separate swimlane rows when they overlap on same day)
-4. **Data table** — Session | Time (UTC) | Active | Est. | WakaTime | Claude | Codex | Commits
+3. **Gantt timeline** — UTC horizontal bars; git, Claude, Codex, and Cursor as separate colored datasets on same chart (separate swimlane rows when they overlap on same day)
+4. **Data table** — Session | Time (UTC) | Active | Est. | WakaTime | Claude | Codex | Cursor | Commits
 
 Chart.js essentials:
 ```javascript
@@ -203,6 +212,7 @@ Save as `<project-dir>/total_hours.md`.
 - [ ] **WakaTime API key** — `~/.wakatime.cfg` exists and contains `api_key = waka_...` under `[settings]`. Run `cat ~/.wakatime.cfg` to verify. If missing, the WakaTime script will fail silently or with an auth error.
 - [ ] **Git repo accessible** — the project directory is a git repo with commits (`git log --oneline -5 /path/to/repo` returns results). If not, `git_sessions.py` will return 0 sessions.
 - [ ] **Claude history exists** — `~/.claude/history.jsonl` is present and non-empty, OR `~/.claude/projects/` contains session files for the project. If both are missing, Claude hours will be 0.
+- [ ] **Cursor data accessible** — `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` exists (macOS). If missing, Cursor hours will be 0. The script reads SQLite databases in read-only mode.
 - [ ] **Date range is valid** — `--since` is before `--until`; the range covers dates when work actually happened.
 
 ### After generation
@@ -230,13 +240,14 @@ Save as `<project-dir>/total_hours.md`.
    python3 wakatime_fetch.py --start 2026-02-01 --end 2026-02-23 --project api-server
    python3 claude_messages.py --project-path /Users/alice/code/api-server
    python3 codex_messages.py --project-path /Users/alice/code/api-server
+   python3 cursor_messages.py --project-path /Users/alice/code/api-server
    ```
 
-3. Reconcile: `git_sessions.py` returns 14 sessions (22.5h), WakaTime returns 11.2h, Claude returns 47 prompts across 9 days, Codex returns 0 (not used on this project). Merged total after union + gap merging: **26.3h**.
+3. Reconcile: `git_sessions.py` returns 14 sessions (22.5h), WakaTime returns 11.2h, Claude returns 47 prompts across 9 days, Codex returns 0, Cursor returns 12 prompts across 3 days. Merged total after union + gap merging: **27.1h**.
 
 4. Generate `work-hours-analysis.html` and `total_hours.md` in `/Users/alice/code/api-server/`.
 
-**Result:** "You spent approximately **26.3 hours** on api-server in February 2026 (14 git sessions, 47 Claude prompts, WakaTime reference: 11.2h active typing). Report saved to `/Users/alice/code/api-server/work-hours-analysis.html`."
+**Result:** "You spent approximately **27.1 hours** on api-server in February 2026 (14 git sessions, 47 Claude prompts, 12 Cursor prompts, WakaTime reference: 11.2h active typing). Report saved to `/Users/alice/code/api-server/work-hours-analysis.html`."
 
 ---
 
@@ -255,6 +266,7 @@ Save as `<project-dir>/total_hours.md`.
    python3 wakatime_fetch.py --start 2025-11-01 --end 2026-01-31 --project marketplace
    python3 claude_messages.py --project-path /Users/bob/marketplace-backend
    python3 codex_messages.py --project-path /Users/bob/marketplace-backend
+   python3 cursor_messages.py --project-path /Users/bob/marketplace-backend
    ```
 
 3. `claude_messages.py` returns 0 results with `alternate_paths: ["/Users/bob/old-market/backend"]`.
@@ -304,7 +316,7 @@ Save as `<project-dir>/total_hours.md`.
 
 ---
 
-### Claude or Codex returns 0 sessions (no alternate_paths)
+### Claude, Codex, or Cursor returns 0 sessions (no alternate_paths)
 
 **Symptom:** Both `timestamps: []` and `alternate_paths: []`.
 
@@ -312,10 +324,11 @@ Save as `<project-dir>/total_hours.md`.
 
 | Cause | Fix |
 |---|---|
-| Claude Code / Codex was not used on this project | Expected — note it in the report |
+| The tool was not used on this project | Expected — note it in the report |
 | Wrong `--project-path` (typo, symlink, trailing slash) | Use `realpath /path/to/repo` to get the canonical absolute path; pass that |
-| History files don't exist | Check `~/.claude/history.jsonl` and `~/.claude/projects/` exist; check `~/.codex/sessions/` exists |
+| History files don't exist | Check `~/.claude/history.jsonl` and `~/.claude/projects/` exist; check `~/.codex/sessions/` exists; check `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` exists |
 | Project path uses a symlink that resolves differently | Use the resolved path: `python3 -c "import os; print(os.path.realpath('/your/path'))"` |
+| Cursor database locked by running Cursor instance | The script opens databases in read-only mode — this should not happen, but if it does, try closing Cursor temporarily |
 
 ---
 
@@ -365,8 +378,10 @@ python3 claude_messages.py --filter marketplace
 
 **Claude Code data sources:** `claude_messages.py` uses two sources: `~/.claude/history.jsonl` (primary; `project` field = abs path, `timestamp` in ms) and `~/.claude/projects/<encoded>/*.jsonl` (session files; `cwd` field, `type=="user"` entries, ISO timestamps). Encoded dir name format: `/Users/foo/bar` → `-Users-foo-bar`. Always prefer `--project-path` over `--filter`. See [references/data-sources.md](references/data-sources.md) for full field reference.
 
+**Cursor IDE data sources:** `cursor_messages.py` reads from Cursor's SQLite databases (`.vscdb` files). Primary source is `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` — the `cursorDiskKV` table contains `composerData:{sessionId}` entries (with `workspaceUri` for project matching) and `bubbleId:{sessionId}:{messageId}` entries (with per-message timestamps). Fallback source is workspace-level `state.vscdb` files under `workspaceStorage/*/`, with `workspace.json` mapping each workspace to its project folder. Databases are opened read-only. Cross-platform paths are supported (macOS, Windows, Linux). Output format matches Claude/Codex scripts: `timestamps` array + `alternate_paths` for folder-move detection. See [references/data-sources.md](references/data-sources.md) for full field reference.
+
 **Reconciliation algorithm:** Gap threshold is 1.5h. All sources converted to UTC epoch float intervals. Intervals merged if gap ≤ threshold. Per-interval estimate: `max(duration + 0.5h, 0.5h)`. Merged total = Σ estimates. See [references/reconciliation.md](references/reconciliation.md) for full pseudocode and the session detection helper function.
 
-**Folder move detection:** Both `claude_messages.py` and `codex_messages.py` scan all known history for matching project names when 0 results are found at the provided path. Returns `alternate_paths` list. If non-empty, ask user to confirm, re-run with old path, merge timestamps. See [references/folder-move-detection.md](references/folder-move-detection.md) for detection logic and edge cases.
+**Folder move detection:** `claude_messages.py`, `codex_messages.py`, and `cursor_messages.py` all scan known history for matching project names when 0 results are found at the provided path. Returns `alternate_paths` list. If non-empty, ask user to confirm, re-run with old path, merge timestamps. See [references/folder-move-detection.md](references/folder-move-detection.md) for detection logic and edge cases.
 
-**Multi-repo projects:** By default, scan for `.git` subdirectories to auto-discover all sub-repos. Run `git_sessions.py`, `claude_messages.py`, and `codex_messages.py` on each sub-repo plus the root directory. Use WakaTime multi-project discovery to find all matching WakaTime project names. Merge all session arrays, re-sort by date, recompute daily totals and grand total.
+**Multi-repo projects:** By default, scan for `.git` subdirectories to auto-discover all sub-repos. Run `git_sessions.py`, `claude_messages.py`, `codex_messages.py`, and `cursor_messages.py` on each sub-repo plus the root directory. Use WakaTime multi-project discovery to find all matching WakaTime project names. Merge all session arrays, re-sort by date, recompute daily totals and grand total.

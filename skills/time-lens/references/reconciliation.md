@@ -2,9 +2,9 @@
 
 ## Overview
 
-The reconciliation step combines all four data sources into a single merged estimate of actual working time, eliminating double-counting where sources overlap.
+The reconciliation step combines all five data sources into a single merged estimate of actual working time, eliminating double-counting where sources overlap.
 
-**Why merge matters:** AI agent prompts (Claude/Codex) often appear minutes before or after git commits in the same work session. WakaTime captures IDE keystrokes that may fall between commits. A typical flow: research with Claude → write code (WakaTime keystroke capture) → commit (git). All three events belong to one session. The union of all four sources captures true session boundaries without double-counting.
+**Why merge matters:** AI agent prompts (Claude/Codex/Cursor) often appear minutes before or after git commits in the same work session. WakaTime captures IDE keystrokes that may fall between commits. A typical flow: research with Claude → use Cursor's AI for edits → write code (WakaTime keystroke capture) → commit (git). All four events belong to one session. The union of all five sources captures true session boundaries without double-counting.
 
 The merged total replaces "git-only" as the primary estimate. WakaTime hours are shown for reference only (active keystrokes only, always lower).
 
@@ -31,6 +31,7 @@ All timestamps must be converted to **UTC epoch floats** before merging.
 | `git_sessions.py` | Local datetime strings with timezone offset from `git log` | Convert using offset → UTC epoch |
 | `claude_messages.py` | Point events, UTC epoch floats (already converted by script) | None — detect sessions via gap |
 | `codex_messages.py` | Point events, UTC epoch floats (already converted by script) | None — detect sessions via gap |
+| `cursor_messages.py` | Point events, UTC epoch floats (already converted by script) | None — detect sessions via gap |
 | `wakatime_fetch.py` | `[start_epoch, end_epoch]` pairs, UTC epoch floats | None — already intervals |
 
 ---
@@ -54,14 +55,17 @@ claude_intervals = detect_sessions(claude_output["timestamps"], GAP_H)
 # --- Step 3: Detect sessions from Codex point events ---
 codex_intervals = detect_sessions(codex_output["timestamps"], GAP_H)
 
-# --- Step 4: WakaTime intervals (already [start, end] pairs) ---
+# --- Step 4: Detect sessions from Cursor point events ---
+cursor_intervals = detect_sessions(cursor_output["timestamps"], GAP_H)
+
+# --- Step 5: WakaTime intervals (already [start, end] pairs) ---
 waka_intervals = wakatime_output["intervals"]  # list of [start_epoch, end_epoch]
 
-# --- Step 5: Combine and sort ---
-all_intervals = git_intervals + claude_intervals + codex_intervals + waka_intervals
+# --- Step 6: Combine and sort ---
+all_intervals = git_intervals + claude_intervals + codex_intervals + cursor_intervals + waka_intervals
 all_intervals.sort(key=lambda x: x[0])  # sort by start time
 
-# --- Step 6: Merge overlapping/adjacent intervals ---
+# --- Step 7: Merge overlapping/adjacent intervals ---
 merged = []
 for interval in all_intervals:
     if merged and interval[0] - merged[-1][1] <= GAP_H * 3600:
@@ -70,14 +74,14 @@ for interval in all_intervals:
     else:
         merged.append(list(interval))
 
-# --- Step 7: Estimate hours per merged interval ---
+# --- Step 8: Estimate hours per merged interval ---
 estimated_hours = []
 for start, end in merged:
     raw_duration_h = (end - start) / 3600
     est = max(raw_duration_h + 0.5, 0.5)  # add 0.5h buffer, min 0.5h
     estimated_hours.append(est)
 
-# --- Step 8: Sum ---
+# --- Step 9: Sum ---
 total_hours = sum(estimated_hours)
 ```
 
@@ -85,7 +89,7 @@ total_hours = sum(estimated_hours)
 
 ## Session Detection from Point Events
 
-Used for Claude and Codex timestamps (which are point events, not intervals):
+Used for Claude, Codex, and Cursor timestamps (which are point events, not intervals):
 
 ```python
 def detect_sessions(timestamps: list[float], gap_h: float) -> list[tuple]:
