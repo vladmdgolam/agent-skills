@@ -48,7 +48,7 @@ Console fallback: `await window.__takeDevScreenshot()`
 2. **Browser tab must be open** at the app URL. Timeout = no SSE connection = ask user to refresh.
 3. **One request at a time.** Second GET returns 409. Wait for first to resolve (success/error/10s timeout).
 4. **Errors return instantly**, not as timeouts. Client POSTs errors back: `{ ok: false, error: "..." }`.
-5. **HMR breaks SSE.** After code changes, user must refresh the browser tab.
+5. **HMR resilience.** Store server-side SSE state on `globalThis` so it survives module reloads. EventSource auto-reconnects on the client. If screenshots still fail after code changes, ask user to refresh.
 
 ## Troubleshooting
 
@@ -57,7 +57,7 @@ Console fallback: `await window.__takeDevScreenshot()`
 | Timeout: browser did not respond | Open/refresh app in browser |
 | 409: already in progress | Wait for timeout (10s) |
 | Black/empty image | Refresh browser tab |
-| Works once, then times out | HMR broke SSE — refresh tab |
+| Works once, then times out | HMR broke SSE — refresh tab (rare if using globalThis pattern) |
 
 See [references/errors.md](references/errors.md) for full error reference.
 

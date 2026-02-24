@@ -9,13 +9,19 @@ import { NextResponse } from 'next/server'
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 
+// Store on globalThis so state survives HMR module reloads (Prisma pattern)
 interface PendingRequest {
   resolve: (value: { ok: boolean; path?: string; error?: string }) => void
   params?: Record<string, string>
 }
+interface DevScreenshotState {
+  pending: PendingRequest | null
+  sseNotify: ((params?: Record<string, string>) => void) | null
+}
+const g = globalThis as unknown as { __devScreenshot?: DevScreenshotState }
+if (!g.__devScreenshot) g.__devScreenshot = { pending: null, sseNotify: null }
+const state = g.__devScreenshot
 
-let pending: PendingRequest | null = null
-let sseNotify: ((params?: Record<string, string>) => void) | null = null
 const TIMEOUT_MS = 10_000
 
 export async function GET(req: Request) {
@@ -30,23 +36,23 @@ export async function GET(req: Request) {
     const stream = new ReadableStream({
       start(controller) {
         controller.enqueue(encoder.encode(': connected\n\n'))
-        sseNotify = (params) => {
+        state.sseNotify = (params) => {
           const payload = params ? JSON.stringify(params) : 'capture'
           controller.enqueue(encoder.encode(`data: ${payload}\n\n`))
         }
-        if (pending) {
-          const payload = pending.params ? JSON.stringify(pending.params) : 'capture'
+        if (state.pending) {
+          const payload = state.pending.params ? JSON.stringify(state.pending.params) : 'capture'
           controller.enqueue(encoder.encode(`data: ${payload}\n\n`))
         }
       },
-      cancel() { sseNotify = null },
+      cancel() { state.sseNotify = null },
     })
     return new Response(stream, {
       headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
     })
   }
 
-  if (pending)
+  if (state.pending)
     return NextResponse.json({ error: 'Screenshot already in progress' }, { status: 409 })
 
   const params: Record<string, string> = {}
@@ -54,11 +60,11 @@ export async function GET(req: Request) {
   const hasParams = Object.keys(params).length > 0
 
   const result = await new Promise<{ ok: boolean; path?: string; error?: string }>((resolve) => {
-    pending = { resolve, params: hasParams ? params : undefined }
-    sseNotify?.(hasParams ? params : undefined)
+    state.pending = { resolve, params: hasParams ? params : undefined }
+    state.sseNotify?.(hasParams ? params : undefined)
     setTimeout(() => {
-      if (pending?.resolve === resolve) {
-        pending = null
+      if (state.pending?.resolve === resolve) {
+        state.pending = null
         resolve({ ok: false, error: 'Timeout: browser did not respond' })
       }
     }, TIMEOUT_MS)
@@ -75,7 +81,7 @@ export async function POST(req: Request) {
 
   if (body.error) {
     const result = { ok: false, error: body.error }
-    if (pending) { pending.resolve(result); pending = null }
+    if (state.pending) { state.pending.resolve(result); state.pending = null }
     return NextResponse.json(result)
   }
 
@@ -88,7 +94,7 @@ export async function POST(req: Request) {
   await writeFile(join(dir, 'latest.png'), Buffer.from(base64, 'base64'))
 
   const result = { ok: true, path: '.screenshots/latest.png' }
-  if (pending) { pending.resolve(result); pending = null }
+  if (state.pending) { state.pending.resolve(result); state.pending = null }
   return NextResponse.json(result)
 }
 ```
