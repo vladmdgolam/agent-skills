@@ -73,6 +73,22 @@ Analyze and visualize time spent on software projects by combining data from mul
 - Markdown report with ASCII charts
 - Reconciliation logic across overlapping sources
 
+### visual-feedback-loop
+
+AI agent visual feedback loop for capturing and inspecting rendered output from any web app during iterative development.
+
+**Use when:**
+- Iterating on visual code (UI, canvas, 3D, SVG, charts, animations)
+- You need to SEE the rendered result to evaluate quality
+- Doing visual QA or A/B comparison of render variants
+
+**Covers:**
+- Dev-screenshot API pattern (GET trigger → SSE → client capture → POST back → file saved)
+- Parameterized offscreen rendering with custom params
+- WebMCP tool registration for Chrome Canary agents
+- Console and Chrome MCP fallbacks
+- Next.js reference implementation
+
 ## Adding Skills
 
 Each skill lives in `skills/<skill-name>/` with a required `SKILL.md` and optional `references/`, `scripts/`, and `assets/` directories.
