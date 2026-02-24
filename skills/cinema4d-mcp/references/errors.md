@@ -17,9 +17,9 @@
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `list_objects` validation error (expected string, got dict) | MCP schema mismatch (fixed in vladmdgolam fork) | Update server, or use `execute_python_script` to traverse hierarchy |
+| `list_objects` validation error (expected string, got dict) | MCP schema mismatch (fixed in some forks) | Update server, or use `execute_python_script` to traverse hierarchy |
 | `load_scene` error (`takes 1 positional argument but N were given`) | Plugin bug: path unpacked as args | Load scene manually or via `execute_python_script` + `LoadDocument` |
-| `render_preview` validation error (expected string, got dict) | Same schema mismatch (fixed in vladmdgolam fork) | Update server, or skip preview |
+| `render_preview` validation error (expected string, got dict) | Same schema mismatch (fixed in some forks) | Update server, or skip preview |
 | Frame sampling returns static values | Missing pass evaluation | Call `ExecutePasses` after `SetTime` |
 | Jumping to frame X gives wrong positions | Stateful MoGraph evaluation | Step sequentially from start frame |
 

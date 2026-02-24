@@ -538,7 +538,7 @@ print(result)
 
 **Notes:**
 - The socket server may not be running if you started C4D without the MCP plugin loaded.
-- Port `5555` is the default for the vladmdgolam fork. Other forks may use different ports.
+- Port `5555` is the default. Some forks or configurations may use different ports.
 - Responses are newline-delimited JSON. Large responses (e.g., full scene data) will be chunked — loop on `recv` until you have a complete JSON object.
 
 ## Data Output

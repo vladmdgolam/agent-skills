@@ -33,23 +33,65 @@ Ask for or infer:
 - Date range (first commit → last commit, or user-specified)
 - Output location for HTML + markdown files
 
-### 2. Extract data
-
-Run all four scripts. For multi-repo projects, run `git_sessions.py` on each repo separately then merge results.
+**Auto-discover sub-repos:** By default, scan the project directory for `.git` folders in subdirectories (not just the root). Each parent of a `.git` directory is a sub-repo to analyze.
 
 ```bash
-# Git sessions (run per repo)
-python3 git_sessions.py /path/to/repo --since 2026-01-15 --until 2026-02-02
-
-# WakaTime — always pass --project to get per-project hours (not all-account)
-python3 wakatime_fetch.py --start 2026-01-15 --end 2026-02-02 --project my-project
-
-# Claude Code — prefer --project-path for exact match
-python3 claude_messages.py --project-path /abs/path/to/repo
-
-# Codex CLI — same interface as claude_messages.py
-python3 codex_messages.py --project-path /abs/path/to/repo
+# Find all git repos under the project directory
+find /path/to/project -name ".git" -type d 2>/dev/null | sort
 ```
+
+This produces a list like:
+```
+/path/to/project/frontend/.git
+/path/to/project/backend/.git
+/path/to/project/libs/shared/.git
+```
+
+Each of these (minus the `/.git` suffix) is a repo to run `git_sessions.py`, `claude_messages.py`, and `codex_messages.py` on. Also run these scripts on the root project directory itself (for Claude/Codex messages sent from the root, which is common when using monorepo-style workflows).
+
+### 2. Extract data
+
+Run all four scripts on every discovered repo. For git and Claude/Codex, run per sub-repo. For WakaTime, use the multi-project discovery approach described below.
+
+```bash
+# Git sessions — run per sub-repo
+python3 git_sessions.py /path/to/project/frontend --since 2026-01-15 --until 2026-02-02
+python3 git_sessions.py /path/to/project/backend --since 2026-01-15 --until 2026-02-02
+
+# Claude Code — run per sub-repo AND the root directory
+python3 claude_messages.py --project-path /path/to/project
+python3 claude_messages.py --project-path /path/to/project/frontend
+python3 claude_messages.py --project-path /path/to/project/backend
+
+# Codex CLI — same as Claude
+python3 codex_messages.py --project-path /path/to/project
+python3 codex_messages.py --project-path /path/to/project/frontend
+python3 codex_messages.py --project-path /path/to/project/backend
+```
+
+**WakaTime multi-project discovery:** WakaTime often tracks sub-directories as separate projects (e.g., a monorepo at `my-project/` may have WakaTime projects named `my-project`, `frontend`, `backend`, `shared`). A single `--project` query will miss the others.
+
+1. First, run `wakatime_fetch.py` **without** `--project` to get the full project list for the date range:
+   ```bash
+   python3 wakatime_fetch.py --start 2026-01-15 --end 2026-02-02
+   # Returns: { "projects": [{"project": "my-project", "hours": 9.2}, {"project": "frontend", "hours": 5.1}, ...] }
+   ```
+
+2. Filter the returned `projects` list for names matching any of:
+   - The root project directory basename (e.g., `my-project`)
+   - Any sub-repo directory basename (e.g., `frontend`, `backend`)
+   - Any intermediate directory basename that contains a sub-repo (e.g., `libs`)
+
+3. Fetch intervals for each matching project:
+   ```bash
+   python3 wakatime_fetch.py --start 2026-01-15 --end 2026-02-02 --project my-project
+   python3 wakatime_fetch.py --start 2026-01-15 --end 2026-02-02 --project frontend
+   python3 wakatime_fetch.py --start 2026-01-15 --end 2026-02-02 --project backend
+   ```
+
+4. Combine all intervals from all matching WakaTime projects into a single list for reconciliation.
+
+**Why this matters:** In a project with 4 sub-repos, a single `--project` query captured only 9h of the actual 26.5h of WakaTime data. The other 17.5h was tracked under sub-directory project names.
 
 **Folder move detection:** If `claude_messages.py` or `codex_messages.py` return 0 results, check the output for `alternate_paths`. If present, ask the user:
 > "No Claude/Codex history found at `/current/path`, but found sessions for `project-name` at `/old/path`. Was this project moved? Should I include that history too?"
@@ -327,4 +369,4 @@ python3 claude_messages.py --filter marketplace
 
 **Folder move detection:** Both `claude_messages.py` and `codex_messages.py` scan all known history for matching project names when 0 results are found at the provided path. Returns `alternate_paths` list. If non-empty, ask user to confirm, re-run with old path, merge timestamps. See [references/folder-move-detection.md](references/folder-move-detection.md) for detection logic and edge cases.
 
-**Multi-repo projects:** Merge session arrays from multiple `git_sessions.py` runs, re-sort by date, recompute daily totals and grand total.
+**Multi-repo projects:** By default, scan for `.git` subdirectories to auto-discover all sub-repos. Run `git_sessions.py`, `claude_messages.py`, and `codex_messages.py` on each sub-repo plus the root directory. Use WakaTime multi-project discovery to find all matching WakaTime project names. Merge all session arrays, re-sort by date, recompute daily totals and grand total.

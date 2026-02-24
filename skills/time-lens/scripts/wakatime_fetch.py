@@ -6,7 +6,7 @@ Reads API key from ~/.wakatime.cfg [settings] api_key.
 
 Usage:
   python3 wakatime_fetch.py --start 2026-01-15 --end 2026-02-02
-  python3 wakatime_fetch.py --start 2026-01-15 --end 2026-02-02 --project snow
+  python3 wakatime_fetch.py --start 2026-01-15 --end 2026-02-02 --project my-project
 
 Output: JSON with daily summaries and per-project breakdown.
 """

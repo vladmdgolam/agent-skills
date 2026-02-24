@@ -17,14 +17,30 @@ To set the key manually: visit [wakatime.com/settings/api-key](https://wakatime.
 api_key = waka_xxxx...
 ```
 
-### Always Pass `--project`
+### Multi-Project Discovery (Default Workflow)
 
-Without `--project`, the script returns all-account daily totals, which mix multiple projects worked on the same days. Always pass `--project <wakatime-project-name>` to get per-project data.
+WakaTime often tracks sub-directories as separate projects. A monorepo at `my-monorepo/` may have WakaTime projects named `my-monorepo`, `frontend`, `api-service`, `shared-utils`, etc. Querying only the root project name misses significant hours.
 
-Example:
-```bash
-python3 wakatime_fetch.py --start 2026-01-15 --end 2026-02-02 --project my-project
-```
+**Default approach — always do this:**
+
+1. Run `wakatime_fetch.py` **without** `--project` first to get the full project list:
+   ```bash
+   python3 wakatime_fetch.py --start 2026-01-15 --end 2026-02-02
+   # Returns: { "projects": [{"project": "my-monorepo", "hours": 9.2}, {"project": "frontend", "hours": 5.0}, ...] }
+   ```
+
+2. Filter the `projects` list for names matching the root directory basename OR any sub-repo/sub-directory basename.
+
+3. Fetch intervals for **each** matching project name:
+   ```bash
+   python3 wakatime_fetch.py --start 2026-01-15 --end 2026-02-02 --project my-monorepo
+   python3 wakatime_fetch.py --start 2026-01-15 --end 2026-02-02 --project frontend
+   python3 wakatime_fetch.py --start 2026-01-15 --end 2026-02-02 --project api-service
+   ```
+
+4. Combine all intervals into a single list for reconciliation. The merge algorithm handles overlaps.
+
+**Why this matters:** In practice, querying only the root project name captured 9h out of 26.5h total — missing 66% of actual WakaTime data that was tracked under sub-directory names.
 
 ### Behavior & Limitations
 

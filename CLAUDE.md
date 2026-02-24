@@ -28,18 +28,9 @@ Collection of Claude Code / multi-agent skills published to [skills.sh](https://
 ~/.nvm/versions/node/v22.21.1/bin/npx skills list
 ```
 
-## ⚠️ Broken symlink issue
-
-This repo itself IS the skills source directory. When `npx skills add` runs in project mode (default), it creates symlinks inside `skills/` pointing to `../.agents/skills/<name>` — a path that doesn't exist — causing broken symlinks and confusing git diffs.
-
-**Always install globally** (`-g`) from this repo, never project-level.
-
-If broken symlinks appear in `skills/`:
-```bash
-rm skills/<name> && git checkout -- skills/<name>
-```
-
 ## Adding a new skill
+
+See `references/building-skills-guide.md` for the complete guide to building skills (frontmatter, progressive disclosure, composability, testing, distribution).
 
 1. Create `skills/<name>/SKILL.md` with `name` and `description` frontmatter
 2. Add scripts/references/assets as needed
