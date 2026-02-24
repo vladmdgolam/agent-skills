@@ -73,6 +73,22 @@ Analyze and visualize time spent on software projects by combining data from mul
 - Markdown report with ASCII charts
 - Reconciliation logic across overlapping sources
 
+### pdf-look-scanned
+
+Make PDF documents look like they were scanned on a physical scanner, with optional signature replacement.
+
+**Use when:**
+- Making a PDF look scanned (grayscale, noise, blur, rotation, edge shadows)
+- Replacing digital signatures with real handwritten ones from a source PDF
+- Preparing documents that need a "printed and scanned" appearance
+
+**Covers:**
+- Configurable scan effects (DPI, noise, blur, contrast, JPEG quality)
+- Signature extraction from source PDFs (phone photos, scans)
+- Multi-signature replacement on different pages
+- Coordinate discovery workflow for signature placement
+- Metadata considerations
+
 ### visual-feedback-loop
 
 AI agent visual feedback loop for capturing and inspecting rendered output from any web app during iterative development.
