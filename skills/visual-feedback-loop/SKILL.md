@@ -173,7 +173,9 @@ Add `.screenshots/` to `.gitignore`.
 
 ### 4. WebMCP (optional, Chrome Canary 146+)
 
-Register tools via `webmcp-kit` so agents with `navigator.modelContext` can call them directly:
+Register tools via `webmcp-kit` so agents with `navigator.modelContext` can call them directly.
+
+**Requirement for Claude Code:** WebMCP tools run in the browser, so Claude Code needs the **Claude in Chrome** browser extension to invoke them (via `mcp__claude-in-chrome__javascript_tool`). Without the extension, WebMCP tools are registered but unreachable from the CLI — use the curl-based API instead, which works without any browser extension.
 
 ```typescript
 import { defineTool } from 'webmcp-kit'
