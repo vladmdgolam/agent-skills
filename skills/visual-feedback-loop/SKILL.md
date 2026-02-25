@@ -18,7 +18,7 @@ Agent (CLI)                     Server                            Browser
      |                               |   .screenshots/{UTC}.webp
      |                               |   .screenshots/{UTC}.json  (metadata)
      |                               |   .screenshots/latest.webp (convenience copy)
-     |<-- { ok, path } --------------|
+     |<-- { ok, path, latest } ------|
 ```
 
 Agent can't access the browser directly. Server relays: GET triggers → SSE notifies browser → browser captures and POSTs back → GET resolves.
@@ -36,7 +36,7 @@ curl 'http://localhost:3000/api/dev-screenshot?component=header&theme=dark'
 curl 'http://localhost:3000/api/dev-screenshot?letter=б&depth=0.8'
 ```
 
-Then always read the result:
+Then read the result. Response includes `path` (timestamped file) and `latest` (convenience copy):
 ```
 Read .screenshots/latest.webp
 ```

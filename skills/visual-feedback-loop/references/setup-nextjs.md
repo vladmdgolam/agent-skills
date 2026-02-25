@@ -124,7 +124,7 @@ export async function POST(req: Request) {
   }
   await writeFile(join(dir, `${ts}.json`), JSON.stringify(metadata, null, 2))
 
-  const result = { ok: true, path: `.screenshots/latest.${ext}` }
+  const result = { ok: true, path: `.screenshots/${imgFile}`, latest: `.screenshots/latest.${ext}` }
   if (state.pending) { state.pending.resolve(result); state.pending = null }
   return NextResponse.json(result)
 }
