@@ -63,7 +63,8 @@ import json
 CHUNK_START = 0    # change per run
 CHUNK_END = 199    # change per run
 CLONER_NAME = "MyClonerName"
-OUTPUT_PATH = f"/tmp/bake_chunk_{CHUNK_START}_{CHUNK_END}.json"
+import tempfile, os
+OUTPUT_PATH = os.path.join(tempfile.gettempdir(), f"bake_chunk_{CHUNK_START}_{CHUNK_END}.json")
 
 def find_obj(name):
     stack = [doc.GetFirstObject()]
@@ -140,7 +141,8 @@ import json
 import glob
 import os
 
-chunk_files = sorted(glob.glob("/tmp/bake_chunk_*.json"))
+import tempfile
+chunk_files = sorted(glob.glob(os.path.join(tempfile.gettempdir(), "bake_chunk_*.json")))
 if not chunk_files:
     print("No chunk files found")
     exit(1)
@@ -166,7 +168,8 @@ output = {
     "frames": merged_frames
 }
 
-with open("/tmp/bake_merged.json", "w") as f:
+merged_path = os.path.join(tempfile.gettempdir(), "bake_merged.json")
+with open(merged_path, "w") as f:
     json.dump(output, f)
 
 print(f"Merged {len(chunk_files)} chunks → {len(merged_frames)} frames")
@@ -197,7 +200,8 @@ For very large bakes (500+ clones × 1000+ frames), the `frames_data` dict can g
 ```python
 import json
 
-OUTPUT_PATH = "/tmp/bake_streaming.json"
+import tempfile
+OUTPUT_PATH = os.path.join(tempfile.gettempdir(), "bake_streaming.json")
 
 with open(OUTPUT_PATH, "w") as f:
     f.write('{"frames":{')

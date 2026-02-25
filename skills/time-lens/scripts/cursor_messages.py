@@ -2,13 +2,18 @@
 """
 Count Cursor IDE user prompts for a specific project, with per-day breakdown.
 
-Data sources:
-  Primary:   ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb
+Data sources (paths auto-detected per platform):
+  Primary:   <Cursor User dir>/globalStorage/state.vscdb
              — cursorDiskKV table: composerData:{sessionId} (workspace URI) and
                bubbleId:{sessionId}:{messageId} (per-message timestamps)
-  Fallback:  ~/Library/Application Support/Cursor/User/workspaceStorage/*/state.vscdb
+  Fallback:  <Cursor User dir>/workspaceStorage/*/state.vscdb
              — ItemTable: composer.composerData (session-level timestamps only)
              — ItemTable: legacy chatdata keys (per-message timestamps)
+
+  Cursor User dir:
+    macOS:   ~/Library/Application Support/Cursor/User
+    Windows: %APPDATA%/Cursor/User
+    Linux:   ~/.config/Cursor/User
 
 Usage:
   python3 cursor_messages.py --project-path /abs/path/to/repo

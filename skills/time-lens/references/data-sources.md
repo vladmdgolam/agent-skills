@@ -139,7 +139,9 @@ The `cursorDiskKV` table contains key-value pairs:
 
 ### Source 2: Workspace Storage `ItemTable` (fallback)
 
-Location: `~/Library/Application Support/Cursor/User/workspaceStorage/*/state.vscdb`
+Location (macOS): `~/Library/Application Support/Cursor/User/workspaceStorage/*/state.vscdb`
+Location (Windows): `%APPDATA%/Cursor/User/workspaceStorage/*/state.vscdb`
+Location (Linux): `~/.config/Cursor/User/workspaceStorage/*/state.vscdb`
 
 Each workspace directory also contains a `workspace.json` file with a `folder` field (a `file://` URI) that maps the workspace to its project directory.
 

@@ -224,10 +224,12 @@ output = {
     "frames": frames_data
 }
 
-with open("/tmp/mograph_export.json", "w") as f:
+import tempfile, os
+export_path = os.path.join(tempfile.gettempdir(), "mograph_export.json")
+with open(export_path, "w") as f:
     json.dump(output, f)
 
-print(f"Exported {len(frames_data)} frames to /tmp/mograph_export.json")
+print(f"Exported {len(frames_data)} frames to {export_path}")
 ```
 
 ### Step 6: Validate
@@ -235,7 +237,7 @@ Run this after export to catch silent errors before handing data downstream:
 ```python
 import json, math
 
-with open("/tmp/mograph_export.json") as f:
+with open(export_path) as f:
     data = json.load(f)
 
 fps = data["fps"]
@@ -395,14 +397,14 @@ for frame in range(0, 11):
 
 4. Confirm output: 50 clones per frame, positions changing frame to frame, no NaN values.
 
-5. Run full bake to `/tmp/spherecloner_export.json` using the Complete Animation Bake Workflow (Steps 3-5 above).
+5. Run full bake using the Complete Animation Bake Workflow (Steps 3-5 above). The export JSON is saved to the system temp directory.
 
 6. Convert to Three.js-compatible format — the JSON structure `frames[frame][clone_index].position` maps directly to `BufferAttribute` update per frame in an `AnimationMixer`-driven loop.
 
 **Three.js consumption pattern:**
 ```javascript
 // Load the exported JSON
-const data = await fetch('/tmp/spherecloner_export.json').then(r => r.json());
+const data = await fetch('/data/spherecloner_export.json').then(r => r.json());
 const fps = data.fps;
 
 // On each animation frame:
@@ -544,7 +546,7 @@ print(result)
 ## Data Output
 
 - Save to JSON with metadata (scene name, fps, frame range, sampling step)
-- `json.dumps()` + `print()` for small results, `/tmp/*.json` for large data
+- `json.dumps()` + `print()` for small results, `tempfile.gettempdir()` for large data
 - Keep both raw extraction and derived model
 
 ## Additional References

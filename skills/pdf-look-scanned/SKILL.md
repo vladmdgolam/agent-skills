@@ -21,7 +21,10 @@ pip3 install pillow pdf2image img2pdf numpy
 
 Also requires `poppler` (provides `pdftoppm`):
 - macOS: `brew install poppler`
-- Ubuntu: `apt install poppler-utils`
+- Ubuntu/Debian: `apt install poppler-utils`
+- Fedora/RHEL: `dnf install poppler-utils`
+- Arch: `pacman -S poppler`
+- Windows: `conda install -c conda-forge poppler` or download from [poppler releases](https://github.com/osber/poppler-windows/releases)
 
 ## Quick Start
 
@@ -69,7 +72,8 @@ w, h = page.size
 
 # Crop a region and save for inspection
 crop = page.crop((int(w*0.5), int(h*0.4), int(w*0.8), int(h*0.6)))
-crop.save("/tmp/crop_test.png")
+import tempfile, os
+crop.save(os.path.join(tempfile.gettempdir(), "crop_test.png"))
 ```
 
 ### Replace one signature

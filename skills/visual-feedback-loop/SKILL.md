@@ -82,7 +82,7 @@ Console fallback: `await window.__takeDevScreenshot()`
 3. **One request at a time.** Second GET returns 409. Wait for first to resolve (success/error/10s timeout).
 4. **Errors return instantly**, not as timeouts. Client POSTs errors back: `{ ok: false, error: "..." }`.
 5. **HMR resilience.** Store server-side SSE state on `globalThis` so it survives module reloads. EventSource auto-reconnects on the client. If screenshots still fail after code changes, ask user to refresh.
-6. **HMR does NOT update offscreen render paths.** Closures in `useEffect` capture stale module references. After code changes to rendering logic, always ask user to **hard refresh** (Cmd+Shift+R).
+6. **HMR does NOT update offscreen render paths.** Closures in `useEffect` capture stale module references. After code changes to rendering logic, always ask user to **hard refresh** (Cmd+Shift+R on macOS, Ctrl+Shift+R on Windows/Linux).
 
 ## Troubleshooting
 
@@ -92,11 +92,13 @@ Console fallback: `await window.__takeDevScreenshot()`
 | 409: already in progress | Wait for timeout (10s) |
 | Black/empty image | Refresh browser tab |
 | Works once, then times out | HMR broke SSE — refresh tab (rare if using globalThis pattern) |
-| Code changes not reflected in screenshots | HMR doesn't update offscreen renderers — hard refresh (Cmd+Shift+R) |
+| Code changes not reflected in screenshots | HMR doesn't update offscreen renderers — hard refresh (Cmd+Shift+R on macOS, Ctrl+Shift+R on Windows/Linux) |
 | Comparing screenshots from different code states | Check JSON sidecar for git commit + dirty flag |
 
 See [references/errors.md](references/errors.md) for full error reference.
 
 ## Setup
 
-To add this pattern to a new project, see [references/setup-nextjs.md](references/setup-nextjs.md) for complete Next.js implementation (API route, SSE listener, WebMCP registration).
+The pattern is framework-agnostic — it only requires an HTTP server with GET/POST routes and SSE. The reference implementation uses Next.js, but the same approach works with Express, Fastify, Hono, Vite dev server plugins, or any Node.js HTTP server.
+
+See [references/setup-nextjs.md](references/setup-nextjs.md) for a complete Next.js implementation (API route, SSE listener, WebMCP registration). Adapt the route handler to your framework — the client-side SSE listener and capture logic are identical regardless of server framework.

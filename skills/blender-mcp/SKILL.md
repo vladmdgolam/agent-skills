@@ -150,7 +150,11 @@ Review all warnings before proceeding. Decide: bake procedural textures now, or 
 The MCP server cannot handle GLTF exports (timeout). Always use headless CLI:
 
 ```bash
-/Applications/Blender.app/Contents/MacOS/Blender \
+# Use 'blender' if it's on PATH, otherwise use the platform-specific path:
+#   macOS:   /Applications/Blender.app/Contents/MacOS/Blender
+#   Windows: "C:\Program Files\Blender Foundation\Blender 4.x\blender.exe"
+#   Linux:   /usr/bin/blender
+blender \
   --background "/path/to/scene.blend" \
   --python-expr "
 import bpy, os
@@ -257,12 +261,13 @@ Run the material extraction above. For a character, watch for:
 **Step 4: Export**
 
 ```bash
-/Applications/Blender.app/Contents/MacOS/Blender \
+blender \
   --background "/path/to/character.blend" \
   --python-expr "
-import bpy, os
+import bpy, os, tempfile
+export_dir = tempfile.gettempdir()
 bpy.ops.export_scene.gltf(
-    filepath='/tmp/character.glb',
+    filepath=os.path.join(export_dir, 'character.glb'),
     export_format='GLB',
     export_apply=False,
     export_animations=True,
@@ -273,14 +278,14 @@ bpy.ops.export_scene.gltf(
     export_skins=True,
     export_morph=True,
 )
-print('done:', os.path.getsize('/tmp/character.glb') / 1024 / 1024, 'MB')
+print('done:', os.path.getsize(os.path.join(export_dir, 'character.glb')) / 1024 / 1024, 'MB')
 "
 ```
 
 **Step 5: Verify animations exported**
 
 ```bash
-npx @gltf-transform/cli inspect /tmp/character.glb | grep -i anim
+npx @gltf-transform/cli inspect character.glb | grep -i anim
 ```
 
 Expected output: 3 animations (Idle, Walk, Run). If 0, check that NLA strips are muted or the tracks are set to solo.
@@ -288,9 +293,9 @@ Expected output: 3 animations (Idle, Walk, Run). If 0, check that NLA strips are
 **Step 6: Optimize**
 
 ```bash
-npx @gltf-transform/cli resize /tmp/character.glb /tmp/char_resized.glb --width 1024 --height 1024
-npx @gltf-transform/cli webp /tmp/char_resized.glb /tmp/char_webp.glb --quality 90
-npx @gltf-transform/cli draco /tmp/char_webp.glb /tmp/character_final.glb
+npx @gltf-transform/cli resize character.glb char_resized.glb --width 1024 --height 1024
+npx @gltf-transform/cli webp char_resized.glb char_webp.glb --quality 90
+npx @gltf-transform/cli draco char_webp.glb character_final.glb
 ```
 
 **Step 7: Runtime animation setup (Three.js)**
@@ -374,10 +379,12 @@ bpy.context.scene.cycles.bake_type = 'ROUGHNESS'
 bpy.ops.object.bake(type='ROUGHNESS', save_mode='INTERNAL')
 
 # Save baked image
-bake_img.filepath_raw = '/tmp/MetalPanel_roughness_baked.png'
+import tempfile, os
+bake_path = os.path.join(tempfile.gettempdir(), 'MetalPanel_roughness_baked.png')
+bake_img.filepath_raw = bake_path
 bake_img.file_format = 'PNG'
 bake_img.save()
-print("Baked roughness to /tmp/MetalPanel_roughness_baked.png")
+print(f"Baked roughness to {bake_path}")
 ```
 
 Then connect the new image texture node to the Roughness input and re-export.
@@ -415,7 +422,7 @@ Re-export and run validation checklist. In Babylon.js Sandbox, compare the metal
 The Blender MCP server cannot handle GLTF exports — they exceed the timeout. Always use headless CLI:
 
 ```bash
-/Applications/Blender.app/Contents/MacOS/Blender --background "scene.blend" --python-expr "
+blender --background "scene.blend" --python-expr "
 import bpy, os
 export_path = 'output.glb'
 os.makedirs(os.path.dirname(export_path), exist_ok=True)
@@ -491,7 +498,7 @@ npx @gltf-transform/cli draco webp.glb output.glb
 
 Blender project paths often contain spaces. Always double-quote:
 ```bash
-/Applications/Blender.app/Contents/MacOS/Blender --background "$HOME/Downloads/blend 3/scene.blend" ...
+blender --background "$HOME/Downloads/blend 3/scene.blend" ...
 ```
 
 ## Scene Extraction Pattern
@@ -664,5 +671,5 @@ See [references/errors.md](references/errors.md) for complete error tables.
 ## Data Output
 
 - `print()` + `json.dumps()` for small results (scene info, single object)
-- `/tmp/*.json` for large extraction results (full hierarchy, animation data, material reports)
+- Use `tempfile.gettempdir()` for large extraction results (full hierarchy, animation data, material reports)
 - Always include metadata: scene name, fps, frame range, Blender version

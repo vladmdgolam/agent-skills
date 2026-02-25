@@ -31,9 +31,11 @@ All `~/.codex/sessions/YYYY/MM/DD/rollup-*.jsonl` files are scanned. The `payloa
 
 Two scans are performed:
 
-1. **Workspace storage scan:** All `workspace.json` files under `~/Library/Application Support/Cursor/User/workspaceStorage/*/` are read. The `folder` field (a `file://` URI) is converted to an absolute path. Any path where the final directory component matches the queried project name is treated as a candidate.
+1. **Workspace storage scan:** All `workspace.json` files under the platform-specific Cursor `workspaceStorage/*/` directory are read. The `folder` field (a `file://` URI) is converted to an absolute path. Any path where the final directory component matches the queried project name is treated as a candidate.
 
-2. **Global storage scan:** The `cursorDiskKV` table in `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` is queried for `composerData:*` entries. The `workspaceUri` from each entry is compared using the same name-match logic.
+2. **Global storage scan:** The `cursorDiskKV` table in the platform-specific Cursor `globalStorage/state.vscdb` is queried for `composerData:*` entries. The `workspaceUri` from each entry is compared using the same name-match logic.
+
+Platform-specific Cursor base paths: macOS: `~/Library/Application Support/Cursor/User/`, Windows: `%APPDATA%/Cursor/User/`, Linux: `~/.config/Cursor/User/`.
 
 The union of both scans, excluding the originally queried path, is returned as `alternate_paths`.
 

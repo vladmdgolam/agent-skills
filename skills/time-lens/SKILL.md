@@ -212,7 +212,7 @@ Save as `<project-dir>/total_hours.md`.
 - [ ] **WakaTime API key** — `~/.wakatime.cfg` exists and contains `api_key = waka_...` under `[settings]`. Run `cat ~/.wakatime.cfg` to verify. If missing, the WakaTime script will fail silently or with an auth error.
 - [ ] **Git repo accessible** — the project directory is a git repo with commits (`git log --oneline -5 /path/to/repo` returns results). If not, `git_sessions.py` will return 0 sessions.
 - [ ] **Claude history exists** — `~/.claude/history.jsonl` is present and non-empty, OR `~/.claude/projects/` contains session files for the project. If both are missing, Claude hours will be 0.
-- [ ] **Cursor data accessible** — `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` exists (macOS). If missing, Cursor hours will be 0. The script reads SQLite databases in read-only mode.
+- [ ] **Cursor data accessible** — the Cursor state database exists at the platform-specific path (macOS: `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`, Windows: `%APPDATA%\Cursor\User\globalStorage\state.vscdb`, Linux: `~/.config/Cursor/User/globalStorage/state.vscdb`). If missing, Cursor hours will be 0. The script auto-detects the platform and reads SQLite databases in read-only mode.
 - [ ] **Date range is valid** — `--since` is before `--until`; the range covers dates when work actually happened.
 
 ### After generation
@@ -326,7 +326,7 @@ Save as `<project-dir>/total_hours.md`.
 |---|---|
 | The tool was not used on this project | Expected — note it in the report |
 | Wrong `--project-path` (typo, symlink, trailing slash) | Use `realpath /path/to/repo` to get the canonical absolute path; pass that |
-| History files don't exist | Check `~/.claude/history.jsonl` and `~/.claude/projects/` exist; check `~/.codex/sessions/` exists; check `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` exists |
+| History files don't exist | Check `~/.claude/history.jsonl` and `~/.claude/projects/` exist; check `~/.codex/sessions/` exists; check Cursor's `state.vscdb` exists at the platform-specific path (see Validation Checklist) |
 | Project path uses a symlink that resolves differently | Use the resolved path: `python3 -c "import os; print(os.path.realpath('/your/path'))"` |
 | Cursor database locked by running Cursor instance | The script opens databases in read-only mode — this should not happen, but if it does, try closing Cursor temporarily |
 
@@ -378,7 +378,7 @@ python3 claude_messages.py --filter marketplace
 
 **Claude Code data sources:** `claude_messages.py` uses two sources: `~/.claude/history.jsonl` (primary; `project` field = abs path, `timestamp` in ms) and `~/.claude/projects/<encoded>/*.jsonl` (session files; `cwd` field, `type=="user"` entries, ISO timestamps). Encoded dir name format: `/Users/foo/bar` → `-Users-foo-bar`. Always prefer `--project-path` over `--filter`. See [references/data-sources.md](references/data-sources.md) for full field reference.
 
-**Cursor IDE data sources:** `cursor_messages.py` reads from Cursor's SQLite databases (`.vscdb` files). Primary source is `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` — the `cursorDiskKV` table contains `composerData:{sessionId}` entries (with `workspaceUri` for project matching) and `bubbleId:{sessionId}:{messageId}` entries (with per-message timestamps). Fallback source is workspace-level `state.vscdb` files under `workspaceStorage/*/`, with `workspace.json` mapping each workspace to its project folder. Databases are opened read-only. Cross-platform paths are supported (macOS, Windows, Linux). Output format matches Claude/Codex scripts: `timestamps` array + `alternate_paths` for folder-move detection. See [references/data-sources.md](references/data-sources.md) for full field reference.
+**Cursor IDE data sources:** `cursor_messages.py` reads from Cursor's SQLite databases (`.vscdb` files). Primary source is the platform-specific `state.vscdb` (macOS: `~/Library/Application Support/Cursor/User/globalStorage/`, Windows: `%APPDATA%\Cursor\User\globalStorage\`, Linux: `~/.config/Cursor/User/globalStorage/`) — the `cursorDiskKV` table contains `composerData:{sessionId}` entries (with `workspaceUri` for project matching) and `bubbleId:{sessionId}:{messageId}` entries (with per-message timestamps). Fallback source is workspace-level `state.vscdb` files under `workspaceStorage/*/`, with `workspace.json` mapping each workspace to its project folder. Databases are opened read-only. The script auto-detects the platform. Output format matches Claude/Codex scripts: `timestamps` array + `alternate_paths` for folder-move detection. See [references/data-sources.md](references/data-sources.md) for full field reference.
 
 **Reconciliation algorithm:** Gap threshold is 1.5h. All sources converted to UTC epoch float intervals. Intervals merged if gap ≤ threshold. Per-interval estimate: `max(duration + 0.5h, 0.5h)`. Merged total = Σ estimates. See [references/reconciliation.md](references/reconciliation.md) for full pseudocode and the session detection helper function.
 
