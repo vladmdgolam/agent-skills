@@ -5,6 +5,7 @@ This reference covers known limitations of accessing Redshift material and scene
 If Vlad's fork of Cinema 4D MCP is available, prefer `inspect_redshift_materials` before writing custom scripts. That tool already bundles the safest read-only fallbacks:
 
 - scene assignments via `Ttexture` tags
+- stable scene indices plus `material_index` targeting for duplicate names
 - preview bitmap sampling
 - readable description/container fields
 - explicit graph-probing diagnostics (`candidate_spaces`, active node space, `GetNimbusRef(...)`, runtime availability, GraphView fallback status, and failure reason)
@@ -28,6 +29,14 @@ If `import redshift` works, Vlad's fork also falls back to the older Redshift Gr
 That path is especially useful when the Cinema UI clearly shows a Redshift Shader Graph, but `NodeMaterial.GetGraph(...)` still reports `Invalid Space`.
 
 Known quirk in Vlad's current inspector response: the top-level `capabilities.redshift_module_available` field can still be `false` even when `graph.backend == "redshift_graphview"` and `graph.graphview.redshift_module_imported == true`. For graph reachability, treat the per-material graph fields as the source of truth.
+
+When node-space access does work, Vlad's fork now returns richer node/port data:
+
+- node `id` and `path`
+- port `id`, `path`, `value`, and `default_value`
+- cross-node connections filtered to user-visible inter-node links
+
+Use those IDs as your `FindChild(...)`/port-discovery reference. This mirrors Maxon's current guidance: the Node Editor's IDs are often the most practical source of truth for Redshift port discovery because not every attribute is documented in Python.
 
 ## What You Cannot Access Without Redshift Installed
 
