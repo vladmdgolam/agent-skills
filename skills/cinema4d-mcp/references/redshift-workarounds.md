@@ -7,7 +7,7 @@ If Vlad's fork of Cinema 4D MCP is available, prefer `inspect_redshift_materials
 - scene assignments via `Ttexture` tags
 - preview bitmap sampling
 - readable description/container fields
-- explicit graph-probing diagnostics (`candidate_spaces`, active node space, `GetNimbusRef(...)`, runtime availability, and failure reason)
+- explicit graph-probing diagnostics (`candidate_spaces`, active node space, `GetNimbusRef(...)`, runtime availability, GraphView fallback status, and failure reason)
 
 The current probe follows a renderEngine-style access pattern:
 
@@ -18,11 +18,22 @@ The current probe follows a renderEngine-style access pattern:
 
 This helps distinguish "old RS shader-network material with no accessible node space" from "true node material that may expose a graph".
 
+If `import redshift` works, Vlad's fork also falls back to the older Redshift GraphView backend:
+
+- `redshift.GetRSMaterialNodeMaster(material)`
+- `GvNodeMaster.GetRoot()`
+- GraphView node traversal (`GetDown()`, `GetNext()`)
+- connected-port inspection via `GvPort.GetDestination()` and `GvPort.GetNode()`
+
+That path is especially useful when the Cinema UI clearly shows a Redshift Shader Graph, but `NodeMaterial.GetGraph(...)` still reports `Invalid Space`.
+
+Known quirk in Vlad's current inspector response: the top-level `capabilities.redshift_module_available` field can still be `false` even when `graph.backend == "redshift_graphview"` and `graph.graphview.redshift_module_imported == true`. For graph reachability, treat the per-material graph fields as the source of truth.
+
 ## What You Cannot Access Without Redshift Installed
 
 The following data is inaccessible when Redshift is not installed or not loaded:
 
-- RS node graph internals (shader nodes, connections, port values)
+- RS node graph internals (shader nodes, connections, port values) when neither node-space access nor the Redshift GraphView runtime path is available
 - RS-specific parameter IDs (they are dynamic and version-dependent)
 - RS light properties (intensity, color temperature, IES profile)
 - RS environment settings (dome light, sky shader)

@@ -12,6 +12,8 @@ This skill targets Vlad's fork of Cinema 4D MCP: [vladmdgolam/cinema4d-mcp](http
 Relevant fork additions:
 - `inspect_redshift_materials` - read-only Redshift inspector for assignments, preview-derived colors, readable description/container fields, and best-effort graph probing.
 - renderEngine-style RS graph diagnostics - the inspector now probes `GetNodeMaterialReference()`, `c4d.NodeMaterial(...)`, `GetNimbusRef(...)`, the active node space, and candidate node spaces before giving up on graph access.
+- Redshift GraphView fallback - when node-space access fails but `import redshift` works, the inspector falls back to `redshift.GetRSMaterialNodeMaster(...)` and reports GraphView nodes plus resolved connections.
+- Known response quirk - `capabilities.redshift_module_available` can still be `false` even when the per-material GraphView fallback succeeds; trust `graph.backend`, `graph.selected_probe`, and `graph.graphview.redshift_module_imported` over the top-level flag.
 - More explicit Redshift fallback behavior - when the RS runtime is unavailable, the tool reports that state and the attempted node spaces instead of failing silently.
 - The loaded C4D plugin may lag behind the repo copy. After plugin edits, restart Cinema 4D before trusting new tool behavior.
 
@@ -345,11 +347,11 @@ c4d.MG_GRID_MODE: 0=Endpoint (total span), 1=Per Step (spacing)
 
 **Accessible without RS:** hierarchy, transforms, keyframes, MoGraph clone data, C4D native shaders, material assignments, preview-derived colors, and some readable description/container metadata.
 
-**Best current path in Vlad's fork:** run `inspect_redshift_materials` before writing custom Python. It already performs the safe fallback checks and returns the active node space, candidate graph spaces, `GetNimbusRef(...)` status, and why graph access failed.
+**Best current path in Vlad's fork:** run `inspect_redshift_materials` before writing custom Python. It already performs the safe fallback checks and returns the active node space, candidate graph spaces, `GetNimbusRef(...)` status, GraphView fallback status, and why graph access failed. If the top-level capability flag disagrees with the per-material graph result, trust the per-material graph result.
 
 **NOT accessible without RS:** node graph internals, RS lights/environment, RS API IDs.
 
-**Nuance:** some newer true node-based RS materials may expose graph data through this probe. Older RS shader-network materials can still report `Invalid Space` even when the active node space is Redshift.
+**Nuance:** some newer true node-based RS materials may expose graph data through the node-space probe. Older RS shader-network materials can still report `Invalid Space` there even when the active node space is Redshift, but may still be readable through the legacy Redshift GraphView backend.
 
 ### RS Color Workaround
 RS node graph colors aren't extractable via C4D Python API. Use material preview bitmaps to identify colors:
