@@ -2,6 +2,13 @@
 
 This reference covers known limitations of accessing Redshift material and scene data through the C4D Python API, along with tested workarounds.
 
+If Vlad's fork of Cinema 4D MCP is available, prefer `inspect_redshift_materials` before writing custom scripts. That tool already bundles the safest read-only fallbacks:
+
+- scene assignments via `Ttexture` tags
+- preview bitmap sampling
+- readable description/container fields
+- explicit graph-probing diagnostics (`candidate_spaces`, runtime availability, and failure reason)
+
 ## What You Cannot Access Without Redshift Installed
 
 The following data is inaccessible when Redshift is not installed or not loaded:
@@ -20,6 +27,7 @@ If you try to access these, you will get `AttributeError` or silent empty contai
 - Whether a material is assigned to an object (via `obj.GetTag(c4d.Ttexture)`)
 - Material preview bitmaps (`mat.GetPreview()`)
 - The material's position in the Material Manager
+- Some readable description entries and BaseContainer values
 - Cloner clone-to-material index data (`MODATA_CLONE`)
 - Object transforms, visibility, hierarchy
 

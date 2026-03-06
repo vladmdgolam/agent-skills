@@ -5,9 +5,20 @@ description: "Cinema 4D MCP expert for extracting scene data, writing C4D Python
 
 # Cinema 4D MCP
 
+## Source of Truth
+
+This skill targets Vlad's fork of Cinema 4D MCP: [vladmdgolam/cinema4d-mcp](https://github.com/vladmdgolam/cinema4d-mcp).
+
+Relevant fork additions:
+- `inspect_redshift_materials` - read-only Redshift inspector for assignments, preview-derived colors, readable description/container fields, and best-effort graph probing.
+- More explicit Redshift fallback behavior - when the RS runtime is unavailable, the tool reports that state and the attempted node spaces instead of failing silently.
+- The loaded C4D plugin may lag behind the repo copy. After plugin edits, restart Cinema 4D before trusting new tool behavior.
+
 ## Tool Selection
 
 Use **structured MCP tools** (`get_scene_info`, `list_objects`, `add_primitive`, etc.) for simple operations.
+
+Use **`inspect_redshift_materials` first** for Redshift material inspection. It is the preferred read-only path in Vlad's fork and should replace most ad-hoc preview/assignment scripts.
 
 Use **`execute_python_script`** as the primary path for non-trivial extraction. It avoids wrapper/schema mismatches, gives full `c4d` API access, and allows proper frame stepping control.
 
@@ -331,7 +342,9 @@ c4d.MG_GRID_MODE: 0=Endpoint (total span), 1=Per Step (spacing)
 
 ## Redshift Availability
 
-**Accessible without RS:** hierarchy, transforms, keyframes, MoGraph clone data, C4D native shaders.
+**Accessible without RS:** hierarchy, transforms, keyframes, MoGraph clone data, C4D native shaders, material assignments, preview-derived colors, and some readable description/container metadata.
+
+**Best current path in Vlad's fork:** run `inspect_redshift_materials` before writing custom Python. It already performs the safe fallback checks and returns which graph spaces were attempted.
 
 **NOT accessible without RS:** node graph internals, RS lights/environment, RS API IDs.
 
