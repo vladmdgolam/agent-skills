@@ -7,7 +7,16 @@ If Vlad's fork of Cinema 4D MCP is available, prefer `inspect_redshift_materials
 - scene assignments via `Ttexture` tags
 - preview bitmap sampling
 - readable description/container fields
-- explicit graph-probing diagnostics (`candidate_spaces`, runtime availability, and failure reason)
+- explicit graph-probing diagnostics (`candidate_spaces`, active node space, `GetNimbusRef(...)`, runtime availability, and failure reason)
+
+The current probe follows a renderEngine-style access pattern:
+
+- `material.GetNodeMaterialReference()`
+- `c4d.NodeMaterial(material)`
+- `HasSpace(...)` and `GetGraph(...)` with both string IDs and `maxon.Id`
+- `material.GetNimbusRef(nodespace)`
+
+This helps distinguish "old RS shader-network material with no accessible node space" from "true node material that may expose a graph".
 
 ## What You Cannot Access Without Redshift Installed
 
