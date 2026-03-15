@@ -1,64 +1,137 @@
-# Redshift Workarounds
+# Redshift Data Access
 
-This reference covers known limitations of accessing Redshift material and scene data through the C4D Python API, along with tested workarounds.
+This reference covers how to access Redshift material and scene data through the C4D Python API.
 
-If Vlad's fork of Cinema 4D MCP is available, prefer `inspect_redshift_materials` before writing custom scripts. That tool already bundles the safest read-only fallbacks:
+## Primary Path: maxon Node-Space API (Proven Working)
 
-- scene assignments via `Ttexture` tags
-- stable scene indices plus `material_index` targeting for duplicate names
-- preview bitmap sampling
-- readable description/container fields
-- explicit graph-probing diagnostics (`candidate_spaces`, active node space, `GetNimbusRef(...)`, runtime availability, GraphView fallback status, and failure reason)
+**RS node graphs ARE fully accessible** when Redshift is installed. Even though materials may appear as type 5703 (standard C4D wrappers) and the `inspect_redshift_materials` MCP tool may skip them as `not_redshift_like`, the actual RS node graph data is readable through the `maxon` Python API.
 
-The current probe follows a renderEngine-style access pattern:
+### Complete RS Material Extraction Pattern
 
-- `material.GetNodeMaterialReference()`
-- `c4d.NodeMaterial(material)`
-- `HasSpace(...)` and `GetGraph(...)` with both string IDs and `maxon.Id`
-- `material.GetNimbusRef(nodespace)`
+```python
+import c4d
+import maxon
 
-This helps distinguish "old RS shader-network material with no accessible node space" from "true node material that may expose a graph".
+RS_NODESPACE = "com.redshift3d.redshift4c4d.class.nodespace"
 
-If `import redshift` works, Vlad's fork also falls back to the older Redshift GraphView backend:
+doc = c4d.documents.GetActiveDocument()
 
-- `redshift.GetRSMaterialNodeMaster(material)`
-- `GvNodeMaster.GetRoot()`
-- GraphView node traversal (`GetDown()`, `GetNext()`)
-- connected-port inspection via `GvPort.GetDestination()` and `GvPort.GetNode()`
+for mi, mat in enumerate(doc.GetMaterials()):
+    nm = mat.GetNodeMaterialReference()
+    graph = nm.GetGraph(RS_NODESPACE)
+    if graph.IsEmpty():
+        continue
 
-That path is especially useful when the Cinema UI clearly shows a Redshift Shader Graph, but `NodeMaterial.GetGraph(...)` still reports `Invalid Space`.
+    root = graph.GetRoot()
+    inner = root.GetInnerNodes(maxon.NODE_KIND.ALL_MASK, False)
 
-Known quirk in Vlad's current inspector response: the top-level `capabilities.redshift_module_available` field can still be `false` even when `graph.backend == "redshift_graphview"` and `graph.graphview.redshift_module_imported == true`. For graph reachability, treat the per-material graph fields as the source of truth.
+    for n in inner:
+        kind = n.GetKind()
+        nid = str(n.GetId())
 
-When node-space access does work, Vlad's fork now returns richer node/port data:
+        if kind == 1:  # NODE
+            print(f"Node: {nid}")
+        elif kind == 8:  # INPORT
+            short_name = nid.split('.')[-1]
+            try:
+                val = n.GetDefaultValue()
+                if val is not None:
+                    print(f"  {short_name} = {val}")
+            except:
+                pass
+```
 
-- node `id` and `path`
-- port `id`, `path`, `value`, and `default_value`
-- cross-node connections filtered to user-visible inter-node links
+### What This Gives You
 
-Use those IDs as your `FindChild(...)`/port-discovery reference. This mirrors Maxon's current guidance: the Node Editor's IDs are often the most practical source of truth for Redshift port discovery because not every attribute is documented in Python.
+All RS shader node types and their port values:
+- **RS Standard Material**: base_color, base_color_weight, metalness, refl_roughness, refr_weight, opacity_color, emission_color/weight, coat params, etc.
+- **RS Incandescent**: color, intensity, temperature, colormode, alpha, doublesided
+- **TextureSampler**: path (texture file), gamma, rotate, scale, offset, color_multiplier
+- **MaxonNoise**: color1, color2, noise_type, octaves, animation_speed, coord_scale_global, seed, brightness, contrast
+- **RSRamp**: ramp stops with position, color, interpolation
+- **RSColorCorrection**: gamma, contrast, hue, saturation, level
 
-## What You Cannot Access Without Redshift Installed
+### Finding Specific Node Types
 
-The following data is inaccessible when Redshift is not installed or not loaded:
+```python
+result = maxon.GraphModelHelper.FindNodesByAssetId(
+    graph, "com.redshift3d.redshift4c4d.nodes.core.standardmaterial", True
+)
+```
 
-- RS node graph internals (shader nodes, connections, port values) when neither node-space access nor the Redshift GraphView runtime path is available
-- RS-specific parameter IDs (they are dynamic and version-dependent)
-- RS light properties (intensity, color temperature, IES profile)
-- RS environment settings (dome light, sky shader)
-- Any data behind `c4d.modules.redshift` — this module does not exist in non-RS builds
+Known RS asset IDs:
+- `com.redshift3d.redshift4c4d.nodes.core.standardmaterial`
+- `com.redshift3d.redshift4c4d.nodes.core.incandescent`
+- `com.redshift3d.redshift4c4d.nodes.core.output`
 
-If you try to access these, you will get `AttributeError` or silent empty containers.
+### Node Kind Constants
 
-## What You CAN Access (With or Without RS)
+| Kind | Value | Meaning |
+|------|-------|---------|
+| NODE | 1 | Shader node |
+| INPUTS | 2 | Input ports container |
+| OUTPUTS | 4 | Output ports container |
+| INPORT | 8 | Individual input port (has readable value) |
+| OUTPORT | 16 | Individual output port |
 
-- Material names and hierarchy
-- Whether a material is assigned to an object (via `obj.GetTag(c4d.Ttexture)`)
-- Material preview bitmaps (`mat.GetPreview()`)
-- The material's position in the Material Manager
-- Some readable description entries and BaseContainer values
-- Cloner clone-to-material index data (`MODATA_CLONE`)
+### Key API Notes
+
+- `GetGraph()` returns `NodesGraphModelRef` — does NOT have `IsValid()`, use `IsEmpty()` instead
+- `GetRoot().GetInnerNodes(maxon.NODE_KIND.ALL_MASK, False)` is the reliable traversal method
+- `GetChildren()` on the root often returns empty — use `GetInnerNodes` instead
+- `GetDefaultValue()` works for reading port values; `GetEffectivePortValue()` also works
+- Color values print as `R:1.0, G:1.0, B:1.0`; Vec3 as `X:0.2, Y:0.2, Z:0.2`
+- Ramp data includes nested knot entries with position, color, interpolation per stop
+
+## Secondary Path: Legacy Redshift GraphView
+
+For older RS shader-network materials where `GetGraph()` returns an empty graph:
+
+```python
+import redshift
+gv = redshift.GetRSMaterialNodeMaster(mat)
+if gv:
+    root = gv.GetRoot()
+    child = root.GetDown()
+    while child:
+        print(f"Node: {child.GetName()} op={child.GetOperatorID()}")
+        child = child.GetNext()
+```
+
+This path is useful when the Cinema UI shows a Redshift Shader Graph but the maxon node-space API returns empty. Not all scenes need this — newer RS materials work with the primary path.
+
+## Tertiary Fallback: Preview Bitmap Sampling
+
+When Redshift is not installed at all, sample preview bitmaps for approximate colors:
+
+```python
+bmp = mat.GetPreview(0)
+if bmp:
+    w, h = bmp.GetBw(), bmp.GetBh()
+    r, g, b = bmp.GetPixel(w // 2, h // 2)
+```
+
+This is an approximation — use it only for rough color identification when the above methods are unavailable.
+
+## What You CAN Access
+
+### With RS Installed (primary path)
+- Full RS node graph: all shader nodes, all port values, texture paths, noise params, ramp stops
+- Material assignments via `Ttexture` tags
+- Material preview bitmaps
+- `import redshift` module for legacy GraphView access
+
+### Without RS Installed
+- Material names, hierarchy, assignments
+- Preview bitmaps (if cached)
+- BaseContainer values (limited — RS params stored in node graph, not container)
 - Object transforms, visibility, hierarchy
+- Cloner clone-to-material index data (`MODATA_CLONE`)
+
+### Still Not Accessible via Python API
+- RS light color/intensity/exposure (stored at container IDs 10000+ but all read as defaults; likely need RS light node graph access which is not exposed the same way as materials)
+- Node connections/wiring between RS material nodes (which output connects to which input) — `GetConnections()` exists but hasn't been tested
+- RS environment settings internals
 
 ## RS Color Sampling via Preview Bitmap
 
@@ -371,13 +444,15 @@ for mat in doc.GetMaterials():
 
 ## Known Limitations Summary
 
-| Operation | Status | Workaround |
-|-----------|--------|-----------|
-| Read RS material base color | Not possible via API | Preview bitmap sampling |
-| Read RS node graph connections | Not possible without RS | Visual inspection only |
-| Read RS light color/intensity | Not possible without RS | N/A |
-| Read RS environment shader | Not possible without RS | N/A |
-| Confirm material assignment | Possible | Iterate `Ttexture` tags |
-| Identify material by color | Approximate | Preview bitmap sampling |
-| Get all material names | Possible | `doc.GetMaterials()` |
-| Get RS parameter IDs | Unreliable | Hardcode known IDs with try/except |
+| Operation | Status | Method |
+|-----------|--------|--------|
+| Read RS material base color | **Working** | `maxon` node-space API: `GetDefaultValue()` on INPORT nodes |
+| Read RS material all params | **Working** | Full node graph traversal via `GetInnerNodes()` |
+| Read RS texture paths | **Working** | TextureSampler node `path` port |
+| Read RS noise/ramp params | **Working** | MaxonNoise, RSRamp node ports |
+| Read RS node graph connections | **Untested** | `GetConnections()` exists but not yet verified |
+| Read RS light color/intensity | **Not working** | Container IDs 10000+ return defaults; light node graph not exposed |
+| Read RS environment shader | **Not working** | No known API path |
+| Confirm material assignment | **Working** | Iterate `Ttexture` tags |
+| Get all material names | **Working** | `doc.GetMaterials()` |
+| Preview bitmap color sampling | **Working (fallback)** | `mat.GetPreview(0).GetPixel()` |

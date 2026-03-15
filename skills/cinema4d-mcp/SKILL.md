@@ -10,22 +10,18 @@ description: "Cinema 4D MCP expert for extracting scene data, writing C4D Python
 This skill targets Vlad's fork of Cinema 4D MCP: [vladmdgolam/cinema4d-mcp](https://github.com/vladmdgolam/cinema4d-mcp).
 
 Relevant fork additions:
-- `inspect_redshift_materials` - read-only Redshift inspector for assignments, preview-derived colors, readable description/container fields, and best-effort graph probing.
+- `inspect_redshift_materials` - read-only Redshift inspector for assignments, preview-derived colors, readable description/container fields, and best-effort graph probing. **Note:** this tool may skip RS materials as `not_redshift_like` (type 5703) — use `execute_python_script` with the `maxon` API for full RS node graph extraction instead (see Redshift Material Extraction section).
 - Duplicate-safe material targeting - the inspector accepts `material_index` and returns stable scene indices plus duplicate-name hints when names collide.
-- renderEngine-style RS graph diagnostics - the inspector now probes `GetNodeMaterialReference()`, `c4d.NodeMaterial(...)`, `GetNimbusRef(...)`, the active node space, and candidate node spaces before giving up on graph access.
-- Richer node-space dumps - when `GetGraph()` works, the inspector now returns node IDs/paths, meaningful port values, default values, and cross-node connections instead of only a shallow node list.
 - Redshift GraphView fallback - when node-space access fails but `import redshift` works, the inspector falls back to `redshift.GetRSMaterialNodeMaster(...)` and reports GraphView nodes plus resolved connections.
-- Known response quirk - `capabilities.redshift_module_available` can still be `false` even when the per-material GraphView fallback succeeds; trust `graph.backend`, `graph.selected_probe`, and `graph.graphview.redshift_module_imported` over the top-level flag.
-- More explicit Redshift fallback behavior - when the RS runtime is unavailable, the tool reports that state and the attempted node spaces instead of failing silently.
 - The loaded C4D plugin may lag behind the repo copy. After plugin edits, restart Cinema 4D before trusting new tool behavior.
 
 ## Tool Selection
 
 Use **structured MCP tools** (`get_scene_info`, `list_objects`, `add_primitive`, etc.) for simple operations.
 
-Use **`inspect_redshift_materials` first** for Redshift material inspection. It is the preferred read-only path in Vlad's fork and should replace most ad-hoc preview/assignment scripts.
+Use **`execute_python_script`** as the primary path for non-trivial extraction. It avoids wrapper/schema mismatches, gives full `c4d` + `maxon` API access, and allows proper frame stepping control. This is especially important for **Redshift material extraction** — the `maxon` node-space API gives full access to RS node graphs, which other tools may miss.
 
-Use **`execute_python_script`** as the primary path for non-trivial extraction. It avoids wrapper/schema mismatches, gives full `c4d` API access, and allows proper frame stepping control.
+Use **`inspect_redshift_materials`** as a quick overview of material assignments and preview colors, but be aware it may skip RS materials as `not_redshift_like` if they use type 5703 wrappers. For full RS node graph data, use `execute_python_script` with the `maxon` API pattern documented in the Redshift section.
 
 ## Health Check (Always First)
 
@@ -345,26 +341,92 @@ c4d.ID_MG_MOTIONGENERATOR_MODE: 0=Grid, 1=Linear, 2=Radial, 3=Object, 4=Honeycom
 c4d.MG_GRID_MODE: 0=Endpoint (total span), 1=Per Step (spacing)
 ```
 
-## Redshift Availability
+## Redshift Material Extraction
 
-**Accessible without RS:** hierarchy, transforms, keyframes, MoGraph clone data, C4D native shaders, material assignments, preview-derived colors, and some readable description/container metadata.
+**RS node graphs ARE accessible** via the `maxon` Python API when Redshift is installed. The `inspect_redshift_materials` MCP tool may report materials as `not_redshift_like` (type 5703), but the node graph is still readable through the maxon node-space API.
 
-**Best current path in Vlad's fork:** run `inspect_redshift_materials` before writing custom Python. It already performs the safe fallback checks and returns the active node space, candidate graph spaces, `GetNimbusRef(...)` status, GraphView fallback status, node/port IDs when reachable, and why graph access failed. If the top-level capability flag disagrees with the per-material graph result, trust the per-material graph result.
+### Primary Path: maxon Node-Space API (Proven Working)
 
-**NOT accessible without RS:** node graph internals, RS lights/environment, RS API IDs.
+RS materials use node space `com.redshift3d.redshift4c4d.class.nodespace`. Access via:
 
-**Nuance:** some newer true node-based RS materials may expose graph data through the node-space probe. Older RS shader-network materials can still report `Invalid Space` there even when the active node space is Redshift, but may still be readable through the legacy Redshift GraphView backend.
+```python
+import c4d
+import maxon
 
-**Duplicate names:** if the scene contains multiple materials with the same visible name, use `material_index` instead of `material_name`. The inspector now returns stable scene indices and `duplicate_name_indices` to make that explicit.
+RS_NODESPACE = "com.redshift3d.redshift4c4d.class.nodespace"
 
-### RS Color Workaround
-RS node graph colors aren't extractable via C4D Python API. Use material preview bitmaps to identify colors:
+mat = doc.GetMaterials()[0]
+nm = mat.GetNodeMaterialReference()
+graph = nm.GetGraph(RS_NODESPACE)  # returns NodesGraphModelRef
+
+# Traverse ALL nodes and ports:
+root = graph.GetRoot()
+inner = root.GetInnerNodes(maxon.NODE_KIND.ALL_MASK, False)
+
+for n in inner:
+    kind = n.GetKind()
+    nid = str(n.GetId())
+
+    if kind == 1:  # NODE — e.g. standardmaterial, incandescent, texturesampler
+        print(f"Node: {nid}")
+    elif kind == 8:  # INPORT — readable port with value
+        short_name = nid.split('.')[-1]
+        try:
+            val = n.GetDefaultValue()
+            if val is not None:
+                print(f"  {short_name} = {val}")
+        except:
+            pass
+```
+
+**What this gives you:**
+- All shader nodes (RS Standard Material, Incandescent, MaxonNoise, TextureSampler, RSRamp, RSColorCorrection, etc.)
+- All input port values (colors, intensities, roughness, refraction weight, texture paths, noise params, ramp stops, etc.)
+- `GetDefaultValue()` and `GetEffectivePortValue()` both work
+
+**To find specific node types**, use:
+```python
+result = maxon.GraphModelHelper.FindNodesByAssetId(
+    graph, "com.redshift3d.redshift4c4d.nodes.core.standardmaterial", True
+)
+```
+
+### Secondary Path: Legacy GraphView (Older RS Materials)
+
+For older RS shader-network materials where `GetGraph()` returns None:
+```python
+import redshift
+gv = redshift.GetRSMaterialNodeMaster(mat)
+if gv:
+    root = gv.GetRoot()
+    child = root.GetDown()
+    while child:
+        print(f"Node: {child.GetName()} op={child.GetOperatorID()}")
+        child = child.GetNext()
+```
+
+### Fallback: Preview Bitmap Sampling
+
+When neither path works (RS not installed), sample preview bitmaps for approximate colors:
 ```python
 bmp = mat.GetPreview(0)
 if bmp:
-    color = bmp.GetPixel(x, y)  # sample center or representative pixel
+    r, g, b = bmp.GetPixel(bmp.GetBw() // 2, bmp.GetBh() // 2)
 ```
-Or use per-sphere toggles in the renderer to visually verify material assignments.
+
+### Node Kind Constants
+
+| Kind | Value | Meaning |
+|------|-------|---------|
+| NODE | 1 | Shader node (standardmaterial, incandescent, etc.) |
+| INPUTS | 2 | Input ports container |
+| OUTPUTS | 4 | Output ports container |
+| INPORT | 8 | Individual input port (has value) |
+| OUTPORT | 16 | Individual output port |
+
+### Duplicate Names
+
+If the scene contains multiple materials with the same visible name, use `material_index` instead of `material_name` with the MCP inspector.
 
 ## Clone-to-Material Mapping
 
