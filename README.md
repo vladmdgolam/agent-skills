@@ -89,6 +89,27 @@ Make PDF documents look like they were scanned on a physical scanner, with optio
 - Coordinate discovery workflow for signature placement
 - Metadata considerations
 
+### figma-context-mcp
+
+Expert guide for using the Figma Context MCP (Framelink) efficiently while avoiding 429 rate-limit errors.
+
+**Use when:**
+- Using Framelink Figma MCP tools (`get_figma_data`, `download_figma_images`)
+- Fetching Figma designs for code generation
+- User hits 429 rate limits from Figma API
+- Extracting design tokens or component data from Figma
+- Downloading Figma assets/images
+- Any design-to-code workflow involving Figma URLs
+
+**Covers:**
+- Metadata-first, prune-first, fetch-last pipeline (2-3 API calls instead of dozens)
+- Depth-limited node tree fetching to keep responses <500 KB
+- Batch image downloads with deduplication
+- Plan-tier awareness (limits tied to file owner's plan, not yours)
+- Rate-limit diagnostics and recovery steps
+- Common anti-patterns that cause 429 lockouts
+- Alternative workflows when rate-limited (screenshots, manual export)
+
 ### visual-feedback-loop
 
 AI agent visual feedback loop for capturing and inspecting rendered output from any web app during iterative development.
