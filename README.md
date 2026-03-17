@@ -110,6 +110,24 @@ Expert guide for using the Figma Context MCP (Framelink) efficiently while avoid
 - Common anti-patterns that cause 429 lockouts
 - Alternative workflows when rate-limited (screenshots, manual export)
 
+### apple-books-mcp
+
+Extracts highlights, annotations, and book data from Apple Books via MCP.
+
+**Use when:**
+- Exporting book highlights with colors and notes
+- Extracting annotations from specific books or a reading list
+- Searching highlights across your entire library
+- Matching books from an external list against Apple Books library
+
+**Covers:**
+- Efficient batch color extraction (5 API calls instead of 150+)
+- Color map building via `get_highlights_by_color` + Python cross-referencing
+- Annotation data structure (style values, color mapping, underlines)
+- Markdown export patterns with color-coded emoji indicators
+- Book matching strategies (translations, partial titles, multiple editions)
+- Troubleshooting common issues (empty results, null colors, large outputs)
+
 ### visual-feedback-loop
 
 AI agent visual feedback loop for capturing and inspecting rendered output from any web app during iterative development.
