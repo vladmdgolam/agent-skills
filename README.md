@@ -18,7 +18,7 @@ npx skills add vladmdgolam/agent-skills --skill cinema4d-mcp
 
 ## Available Skills
 
-### cinema4d-mcp
+### 🎬 cinema4d-mcp
 
 Cinema 4D MCP expert for extracting scene data, writing C4D Python scripts, and controlling Cinema 4D through MCP tools.
 
@@ -37,7 +37,7 @@ Cinema 4D MCP expert for extracting scene data, writing C4D Python scripts, and 
 - Redshift availability matrix
 - Timeout management and chunked baking strategies
 
-### blender-mcp
+### 🧊 blender-mcp
 
 Blender MCP expert for scene inspection, Python scripting, GLTF export, and material/animation extraction.
 
@@ -57,7 +57,7 @@ Blender MCP expert for scene inspection, Python scripting, GLTF export, and mate
 - Texture optimization pipeline (resize → WebP → Draco)
 - Known error tables with fixes (MCP, export, Python API, texture paths)
 
-### time-lens
+### ⏱️ time-lens
 
 Analyze and visualize time spent on software projects by combining data from multiple sources: WakaTime coding time, git commit session detection, Claude Code usage, Codex CLI usage, and Cursor IDE usage.
 
@@ -73,7 +73,7 @@ Analyze and visualize time spent on software projects by combining data from mul
 - Markdown report with ASCII charts
 - Reconciliation logic across overlapping sources
 
-### pdf-look-scanned
+### 🖨️ pdf-look-scanned
 
 Make PDF documents look like they were scanned on a physical scanner, with optional signature replacement.
 
@@ -89,7 +89,7 @@ Make PDF documents look like they were scanned on a physical scanner, with optio
 - Coordinate discovery workflow for signature placement
 - Metadata considerations
 
-### figma-context-mcp
+### 🎨 figma-context-mcp
 
 Expert guide for using the Figma Context MCP (Framelink) efficiently while avoiding 429 rate-limit errors.
 
@@ -110,7 +110,7 @@ Expert guide for using the Figma Context MCP (Framelink) efficiently while avoid
 - Common anti-patterns that cause 429 lockouts
 - Alternative workflows when rate-limited (screenshots, manual export)
 
-### apple-books-mcp
+### 📚 apple-books-mcp
 
 Extracts highlights, annotations, and book data from Apple Books via MCP.
 
@@ -128,7 +128,7 @@ Extracts highlights, annotations, and book data from Apple Books via MCP.
 - Book matching strategies (translations, partial titles, multiple editions)
 - Troubleshooting common issues (empty results, null colors, large outputs)
 
-### visual-feedback-loop
+### 👁️ visual-feedback-loop
 
 AI agent visual feedback loop for capturing and inspecting rendered output from any web app during iterative development.
 
