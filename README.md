@@ -144,6 +144,22 @@ AI agent visual feedback loop for capturing and inspecting rendered output from 
 - Console and Chrome MCP fallbacks
 - Next.js reference implementation
 
+### 👉 poke
+
+Resume the current task immediately and keep momentum, with optional extra focus from the user.
+
+**Use when:**
+- The user says "poke", "keep going", "continue", or "resume what you were doing"
+- You need a lightweight nudge to keep working without redefining the task
+- A follow-up message adds a small prioritization hint but not a brand-new request
+
+**Covers:**
+- Re-anchoring on the latest goal and current repo or session state
+- Choosing the next concrete step automatically
+- Preferring action over explanation
+- Treating extra `/poke` text as prioritization, not a restart
+- Avoiding unnecessary questions unless there is a real tradeoff
+
 ## Adding Skills
 
 Each skill lives in `skills/<skill-name>/` with a required `SKILL.md` and optional `references/`, `scripts/`, and `assets/` directories.
