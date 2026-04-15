@@ -160,6 +160,23 @@ Create a new agent skill in this repo with proper structure, frontmatter, README
 - Global install via `npx skills add`
 - Quality checklist and common mistakes
 
+### 🔍 agent-sessions
+
+Search, list, and resume AI agent sessions across Claude Code, Codex CLI, and Gemini CLI from the terminal.
+
+**Use when:**
+- Finding a past conversation ("find that session where I worked on...")
+- Resuming a previous Claude Code session by ID
+- Listing recent activity across agents
+- Searching session history for a topic or project
+
+**Covers:**
+- CLI tool at `~/Play/radar/tools/agent-sessions` with `--agent`, `--search`, `--project` filters
+- JSON output for scripting
+- Claude session resume via `--resume <id>`
+- Data sources: `~/.claude/projects/`, `~/.codex/sessions/`, `~/.gemini/tmp/*/chats/`
+- Companion tools: `claude-history` (TUI), Claude Code History Viewer (GUI)
+
 ### 👉 poke
 
 Resume the current task immediately and keep momentum, with optional extra focus from the user.
