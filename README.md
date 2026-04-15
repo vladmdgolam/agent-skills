@@ -144,22 +144,6 @@ AI agent visual feedback loop for capturing and inspecting rendered output from 
 - Console and Chrome MCP fallbacks
 - Next.js reference implementation
 
-### 🛠️ add-new-agent-skill
-
-Create a new agent skill in this repo with proper structure, frontmatter, README entry, and global install.
-
-**Use when:**
-- Adding a new skill to this repo
-- Creating a skill from scratch
-- "New skill", "add a skill", "build a skill"
-
-**Covers:**
-- Skill design (name, category, use cases, trigger phrases)
-- SKILL.md creation with proper frontmatter and structure
-- README.md registration
-- Global install via `npx skills add`
-- Quality checklist and common mistakes
-
 ### 🔍 agent-sessions
 
 Search, list, and resume AI agent sessions across Claude Code, Codex CLI, and Gemini CLI from the terminal.
