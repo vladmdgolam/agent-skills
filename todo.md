@@ -1,4 +1,5 @@
 https://github.com/sobotka/blender-addons-contrib
+https://github.com/glebis/claude-skills
 
 /Users/vladmdgolam/Play/flowers-p
 
