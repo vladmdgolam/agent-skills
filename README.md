@@ -144,6 +144,24 @@ AI agent visual feedback loop for capturing and inspecting rendered output from 
 - Console and Chrome MCP fallbacks
 - Next.js reference implementation
 
+### 🪛 reverse-engineer-js
+
+LLM-assisted deobfuscation of minified or obfuscated JavaScript bundles. Wraps [humanifyjs](https://github.com/jehna/humanify) with the right defaults, the pseudo-TTY workaround, and patterns for both whole-bundle and single-module workflows.
+
+**Use when:**
+- Deobfuscating `bundle.js`, fxhash projects, or any minified JS
+- The user says "humanify this", "deobfuscate this", "rename mangled vars", "what does bundle.js do"
+- Working in a project with an `og/` or `modules/` folder fed by humanify
+- humanify crashed with `cursorTo is not a function`
+
+**Covers:**
+- Default model: `gemini-3.1-flash-lite-preview`
+- Pseudo-TTY workaround (`script -q /dev/null ...`) for non-interactive shells
+- Single-module extraction from large bundles
+- `webcrack` pre-split for webpacked bundles
+- Sourcemap-first check (often beats LLM rename for free)
+- Common backends: gemini / openai / local
+
 ### 🔍 agent-sessions
 
 Search, list, and resume AI agent sessions across Claude Code, Codex CLI, and Gemini CLI from the terminal.
