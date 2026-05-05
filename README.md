@@ -144,21 +144,40 @@ AI agent visual feedback loop for capturing and inspecting rendered output from 
 - Console and Chrome MCP fallbacks
 - Next.js reference implementation
 
-### 👉 poke
+### 🪛 reverse-engineer-js
 
-Resume the current task immediately and keep momentum, with optional extra focus from the user.
+LLM-assisted deobfuscation of minified or obfuscated JavaScript bundles. Wraps [humanifyjs](https://github.com/jehna/humanify) with the right defaults, the pseudo-TTY workaround, and patterns for both whole-bundle and single-module workflows.
 
 **Use when:**
-- The user says "poke", "keep going", "continue", or "resume what you were doing"
-- You need a lightweight nudge to keep working without redefining the task
-- A follow-up message adds a small prioritization hint but not a brand-new request
+- Deobfuscating `bundle.js`, fxhash projects, or any minified JS
+- The user says "humanify this", "deobfuscate this", "rename mangled vars", "what does bundle.js do"
+- Working in a project with an `og/` or `modules/` folder fed by humanify
+- humanify crashed with `cursorTo is not a function`
 
 **Covers:**
-- Re-anchoring on the latest goal and current repo or session state
-- Choosing the next concrete step automatically
-- Preferring action over explanation
-- Treating extra `/poke` text as prioritization, not a restart
-- Avoiding unnecessary questions unless there is a real tradeoff
+- Default model: `gemini-3.1-flash-lite-preview`
+- Pseudo-TTY workaround (`script -q /dev/null ...`) for non-interactive shells
+- Single-module extraction from large bundles
+- `webcrack` pre-split for webpacked bundles
+- Sourcemap-first check (often beats LLM rename for free)
+- Common backends: gemini / openai / local
+
+### 🔍 agent-sessions
+
+Search, list, and resume AI agent sessions across Claude Code, Codex CLI, and Gemini CLI from the terminal.
+
+**Use when:**
+- Finding a past conversation ("find that session where I worked on...")
+- Resuming a previous Claude Code session by ID
+- Listing recent activity across agents
+- Searching session history for a topic or project
+
+**Covers:**
+- CLI tool at `~/Play/radar/tools/agent-sessions` with `--agent`, `--search`, `--project` filters
+- JSON output for scripting
+- Claude session resume via `--resume <id>`
+- Data sources: `~/.claude/projects/`, `~/.codex/sessions/`, `~/.gemini/tmp/*/chats/`
+- Companion tools: `claude-history` (TUI), Claude Code History Viewer (GUI)
 
 ## Adding Skills
 
