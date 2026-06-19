@@ -173,8 +173,9 @@ Search, list, and resume AI agent sessions across Claude Code, Codex CLI, Gemini
 - Searching session history for a topic or project
 
 **Covers:**
-- CLI tool at `~/Play/radar/tools/agent-sessions` with `--agent`, `--search`, `--project` filters
-- JSON output for scripting
+- CLI tool at `~/Play/radar/tools/agent-sessions` with `--agent`, `--search`, `--search-scope`, `--project` filters
+- Compact JSON output for scripting; `--include-search-text` is opt-in for transcript indexes
+- Compact handoff snippets via `--context <session-id...>`
 - Claude session resume via `--resume <id>`
 - Data sources: `~/.claude/projects/`, `~/.codex/sessions/`, `~/.gemini/tmp/*/chats/`, `~/.local/share/opencode/opencode.db`, `~/.hermes/state.db`
 - Companion tools: `claude-history` (TUI), Claude Code History Viewer (GUI)
