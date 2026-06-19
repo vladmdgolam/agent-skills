@@ -1,7 +1,8 @@
 ---
 name: agent-sessions
 description: >
-  Search, list, and resume AI agent sessions across Claude Code, Codex CLI, and Gemini CLI.
+  Search, list, and resume AI agent sessions across Claude Code, Codex CLI, Gemini CLI,
+  opencode, and Hermes Agent.
   Use when the user asks to find a past conversation, search session history, resume a
   previous session, list recent agent activity, or check what was discussed in a prior
   session. Also use when asked to "find that conversation where I...", "resume my last
@@ -10,7 +11,7 @@ description: >
 
 # Agent Sessions
 
-Search and manage AI coding agent conversation history across Claude Code, Codex CLI, and Gemini CLI.
+Search and manage AI coding agent conversation history across Claude Code, Codex CLI, Gemini CLI, opencode, and Hermes Agent.
 
 $ARGUMENTS
 
@@ -18,7 +19,7 @@ $ARGUMENTS
 
 ### CLI: `agent-sessions`
 
-Located at `/Users/vladmdgolam/Play/radar/tools/agent-sessions`. A Python 3 script that reads session data from all three agents.
+Located at `/Users/vladmdgolam/Play/radar/tools/agent-sessions`. A Python 3 script that reads session data from all supported agents.
 
 ```bash
 # List all recent sessions (default 30)
@@ -28,6 +29,8 @@ python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions
 python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --agent claude
 python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --agent codex
 python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --agent gemini
+python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --agent opencode
+python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --agent hermes
 
 # Search in prompts (AND logic, case-insensitive)
 python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --search "metal shader"
@@ -84,6 +87,8 @@ open "/Applications/Claude Code History Viewer.app"
 | Claude Code | `~/.claude/projects/<encoded>/*.jsonl` | JSONL with `type`, `message`, `cwd`, `sessionId`, `timestamp` |
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | JSONL with `session_meta` (payload.id, payload.cwd) and `response_item` entries |
 | Gemini CLI | `~/.gemini/tmp/*/chats/session-*.json` | JSON with `sessionId`, `startTime`, `messages[]` array |
+| opencode | `~/.local/share/opencode/opencode.db` | SQLite tables: `session`, `message`, `part`, `project` |
+| Hermes Agent | `~/.hermes/state.db` | SQLite tables: `sessions`, `messages` |
 
 Project mapping for Gemini: `~/.gemini/projects.json` maps absolute paths to project names.
 
@@ -126,7 +131,7 @@ When using `--json`, each session object has:
 
 ```json
 {
-  "agent": "claude|codex|gemini",
+  "agent": "claude|codex|gemini|opencode|hermes",
   "session_id": "uuid",
   "prompt": "first user message (truncated to 120 chars)",
   "timestamp": "ISO 8601",
