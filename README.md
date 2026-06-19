@@ -164,7 +164,7 @@ LLM-assisted deobfuscation of minified or obfuscated JavaScript bundles. Wraps [
 
 ### 🔍 agent-sessions
 
-Search, list, and resume AI agent sessions across Claude Code, Codex CLI, and Gemini CLI from the terminal.
+Search, list, and resume AI agent sessions across Claude Code, Codex CLI, Gemini CLI, opencode, and Hermes Agent from the terminal.
 
 **Use when:**
 - Finding a past conversation ("find that session where I worked on...")
@@ -176,7 +176,7 @@ Search, list, and resume AI agent sessions across Claude Code, Codex CLI, and Ge
 - CLI tool at `~/Play/radar/tools/agent-sessions` with `--agent`, `--search`, `--project` filters
 - JSON output for scripting
 - Claude session resume via `--resume <id>`
-- Data sources: `~/.claude/projects/`, `~/.codex/sessions/`, `~/.gemini/tmp/*/chats/`
+- Data sources: `~/.claude/projects/`, `~/.codex/sessions/`, `~/.gemini/tmp/*/chats/`, `~/.local/share/opencode/opencode.db`, `~/.hermes/state.db`
 - Companion tools: `claude-history` (TUI), Claude Code History Viewer (GUI)
 
 ## Adding Skills
