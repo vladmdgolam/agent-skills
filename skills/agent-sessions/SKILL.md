@@ -54,6 +54,12 @@ python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --json --include-sear
 python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --context <session-id>
 python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --context <id-1> <id-2>
 
+# Build a compact evidence pack for one or more sessions
+python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --pack <id-1> <id-2> --max-chars 5000
+
+# Read bounded excerpts, optionally around a topic/query
+python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --read <id-1> <id-2> --query "logo rotation" --max-chars 5000
+
 # Resume a Claude Code session
 python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --resume <session-id>
 
@@ -115,6 +121,8 @@ Use the smallest useful output first:
 5. Use `--json` only when you need structured parsing; it is compact by default.
 6. Do not use `--include-search-text` unless building a UI/client-side index or explicitly inspecting transcript text.
 7. For handoff context, prefer `--context <id...>` instead of pasting full JSON.
+8. When the user gives session refs and asks to compare, infer, summarize, or conclude from them, run `--pack <id...>` first.
+9. If the pack is too broad or the user gave a topic, run `--read <id...> --query "topic"` for focused excerpts.
 
 ### Finding a past conversation
 
@@ -122,6 +130,30 @@ Use the smallest useful output first:
 2. Use `--context <session-id>` if you need a compact handoff block
 3. For Claude sessions: use `claude --resume <id>` to continue, or `claude-history` to browse
 4. For viewing any agent's full conversation: open CCHV
+
+### Reading provided session refs
+
+If the user pastes blocks like:
+
+```text
+agent: codex
+session id: 019ee05b-25d6-7153-83af-aee3a848e472
+session title: ...
+```
+
+Extract the IDs and start with:
+
+```bash
+python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --pack 019ee05b-25d6-7153-83af-aee3a848e472 <other-id> --max-chars 5000
+```
+
+Use the pack as evidence for cross-session conclusions. If the user asks about a specific topic, use:
+
+```bash
+python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --read <id-1> <id-2> --query "topic terms" --max-chars 5000
+```
+
+Avoid dumping full transcripts unless the user explicitly asks for exhaustive review.
 
 ### Answering "what did I work on?"
 
@@ -176,3 +208,17 @@ session title: K
 ```
 
 Multiple IDs emit a list with the same fields.
+
+## Pack And Read Output
+
+`--pack <id...>` emits one bounded evidence pack per session: metadata, brief, key user requests, and recent or query-relevant excerpts.
+
+`--read <id...>` emits bounded transcript excerpts. Add `--query "terms"` to return message windows around relevant matches instead of broad excerpts.
+
+Useful controls:
+
+```bash
+--max-chars 5000        # approximate excerpt budget per session
+--last-turns 8          # recent messages included in packs/overflow reads
+--context-messages 2    # messages before/after each query match
+```
