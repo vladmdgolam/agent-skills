@@ -554,10 +554,85 @@ def dump_tracks(node, fps):
 - This replaces hand-curated keyframe JSON: an exhaustive walk catches animation on objects
   nobody thought to scan.
 
+## Render-Level Post (videoposts) — NOT in lights/materials
+
+Redshift's render post-processing — photographic exposure, tonemapping, in-render bloom/flare,
+AOVs, OCIO/color management — lives in the **render-settings videopost stack**, not in any
+light or material. Other grade posts (e.g. **Magic Bullet Looks**) sit in the same stack. Miss
+this and you miss the entire RS post layer.
+
+```python
+rdata = doc.GetActiveRenderData()
+vp = rdata.GetFirstVideoPost()
+while vp:
+    is_rs = vp.GetType() == 1036219          # Redshift render videopost type id
+    bc = vp.GetDataInstance()                 # full post params (dump_container)
+    # videoposts can be keyframed (exposure ramps) — run dump_tracks(vp, fps) too
+    vp = vp.GetNext()
+```
+
+RS camera DoF (aperture/focus/lens offset — the bokeh gate) is on the **camera object container
+or a Redshift Camera tag**, not the videopost.
+
+## CUSTOMDATATYPE_RSFILE — texture path + colorspace + gamma
+
+RS texture/file ports are a wrapped `CUSTOMDATATYPE_RSFILE` whose whole value is inaccessible in
+Python. Read the **sub-channels** instead (per Maxon forum 16316). In the legacy GraphView/Xpresso
+path: `node[pid[0].id, c4d.REDSHIFT_FILE_PATH]`, `..., c4d.REDSHIFT_FILE_COLORSPACE]`. In the
+maxon node-space path, walk the port's child ports (`GetChildren()`) for `path`/`colorspace`/
+`gamma` sub-ports. The colorspace (sRGB vs raw) is make-or-break for color matching.
+
+## Node Connections (wiring) — best-effort only
+
+There is **no clean public API** for graph wiring (Maxon forum 16316/15356: "no abstracted way
+in Python"). `port.GetConnections(direction, ...)` exists in the maxon Nodes API but is
+undocumented and signature-unstable across versions. Capture it inside try/except and accept that
+it may yield nothing — port *values* are reliable, wiring is not.
+
+## Takes — the silent mismatch trap
+
+If the final render came from a non-base **Take** with material/render/camera overrides, an
+active-document dump silently captures the wrong state. Always enumerate takes and flag overrides:
+
+```python
+td = doc.GetTakeData()
+for take in <walk td.GetMainTake() children>:
+    take.GetOverrides()         # list of BaseOverride (overridden nodes)
+    take.GetRenderData(td)      # per-take render override
+    take.GetCamera(td)          # per-take camera override
+```
+
+## Procedural (field / Xpresso) animation — CTracks don't see it
+
+The CTrack walk only captures **keyframed** values. Field-driven effects (e.g. a Spherical Field
+reveal) and Xpresso/expression drivers are procedural — you get the field's keyed `Size` but not
+the falloff/remap relationship. Detect and flag them (Field objects by type-name; Xpresso tags by
+`tag.GetType() == 1001149 (Texpresso)`) so you know the keyframe dump isn't the whole story.
+
+## RS Environment — confirmed not extractable
+
+Per Maxon forums 16316 and 15356, **Redshift Environment shader attributes are not exposed in
+either the C++ or Python API.** A generic object-container dump catches the Environment object's
+basic fields and any node-graph string-port file refs, but the true shader internals stay
+unreadable. This is a Maxon-side limitation — do not burn time trying to enumerate them; read the
+values off the rendered reference (MP4) instead.
+
+## What a parameter dump fundamentally CANNOT give you
+
+Be honest about the ceiling. A dump captures **inputs**, not the rendered **result**:
+- The RS-rendered *look* (refraction, caustics, volumetrics, SSS, in-render bloom) is emergent —
+  without Redshift installed you cannot render to see what the numbers produce. The reference
+  MP4/stills stay the ground truth for appearance.
+- **After Effects post** (grade, tritone, lens warp, flares, blend modes) is a separate app —
+  not in any C4D/Redshift dump. The final-comp look is often AE-dominated.
+
 ## Reference Implementation
 
-A complete, defensively-wrapped extractor combining all of the above (lights, RS material
-graphs, exhaustive CTrack animation, node-graph/branch texture recovery, and `relative:///`
-→ absolute resolution) lives at `scripts/c4d/dump_redshift_lights.py` in the refraction repo.
-Every pass is try/except-isolated so a single unsupported API on a given version degrades to an
-empty field instead of aborting the whole dump with a dialog traceback.
+A complete, defensively-wrapped extractor combining all of the above lives at
+`scripts/c4d/dump_redshift_lights.py` in the refraction repo. One run captures: lights, RS
+material graphs (values + best-effort connections + RSFile sub-channels), cameras (incl. RS DoF),
+render-settings videoposts (RS post + Magic Bullet grade), object tags (texture projection + RS
+displacement), exhaustive CTrack animation, procedural-driver flags, takes (with override
+warning), and `relative:///` → absolute asset resolution. Every pass is try/except-isolated so a
+single unsupported API on a given version degrades to an empty field instead of aborting the dump
+with a dialog traceback.
