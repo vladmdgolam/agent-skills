@@ -129,9 +129,13 @@ This is an approximation — use it only for rough color identification when the
 - Cloner clone-to-material index data (`MODATA_CLONE`)
 
 ### Still Not Accessible via Python API
-- RS light color/intensity/exposure (stored at container IDs 10000+ but all read as defaults; likely need RS light node graph access which is not exposed the same way as materials)
 - Node connections/wiring between RS material nodes (which output connects to which input) — `GetConnections()` exists but hasn't been tested
 - RS environment settings internals
+
+> **Correction (2026-06):** RS light color/intensity/exposure **ARE** readable. See
+> "RS Light Parameters" below. Earlier notes claiming they "read as defaults" were wrong —
+> the values come through fine via `light.GetDataInstance()[param_id]` for the simple
+> (non-Filename) params. What actually fails is the *Filename/texture* params on the light.
 
 ## RS Color Sampling via Preview Bitmap
 
@@ -451,8 +455,109 @@ for mat in doc.GetMaterials():
 | Read RS texture paths | **Working** | TextureSampler node `path` port |
 | Read RS noise/ramp params | **Working** | MaxonNoise, RSRamp node ports |
 | Read RS node graph connections | **Untested** | `GetConnections()` exists but not yet verified |
-| Read RS light color/intensity | **Not working** | Container IDs 10000+ return defaults; light node graph not exposed |
+| Read RS light color/intensity/exposure | **Working** | `light.GetDataInstance()[param_id]` — see RS Light Parameters |
+| Read RS light/dome **texture** path | **Working (indirect)** | node-graph/branch string ports — NOT container subscript |
 | Read RS environment shader | **Not working** | No known API path |
+| Read any object/material **animation** | **Working** | CTrack/CCurve walk — renderer-independent, see Animation |
+| Resolve texture ref → absolute file | **Working** | `c4d.GenerateTexturePath()` + doc-relative search |
 | Confirm material assignment | **Working** | Iterate `Ttexture` tags |
 | Get all material names | **Working** | `doc.GetMaterials()` |
 | Preview bitmap color sampling | **Working (fallback)** | `mat.GetPreview(0).GetPixel()` |
+
+## RS Light Parameters
+
+RS light **non-Filename** params read fine straight from the data container. A scene-wide
+walk of all 19 lights in a production scene captured intensity/color/exposure/area for every
+one. Key IDs (RS Light type id `1036751`):
+
+| ID | Meaning | ID | Meaning |
+|----|---------|----|---------|
+| 10000 | light_type (3=area, 4=dome) | 11003 | temperature (K) |
+| 10005 | visible_to_camera | 11004 | intensity |
+| 10018 | intensity_multiplier | 11009 | area_width |
+| 10031 | normalize_intensity | 11010 | area_shape |
+| 10041 | exposure | 11019 | spread |
+| 11000 | color (Vector RGB) | 11020 | softness |
+| 11002 | color_mode | 11022 | contribution_mode |
+| 12000 | dome_texture_0 (**Filename — see below**) | 11023 | contribution_scale |
+
+```python
+bc = light.GetDataInstance()
+intensity = bc[11004]      # works
+color     = bc[11000]      # works (c4d.Vector)
+tex       = bc[12000]      # FAILS: "object unknown in Python" — Filename param
+```
+
+### Filename params on lights (the `12000`/`12008` trap)
+
+The dome/area **texture** params are Filename-typed and the container iterator/subscript
+throws `Parameter value not accessible (object unknown in Python)`. This is the same class
+of failure as iterating an RS material container. Do **not** trust container subscript here.
+
+Recovery order (most → least reliable):
+1. **Node-graph / branch string-port walk** — the dome HDRI in recent RS lives in the
+   maxon node graph or a `BaseShader` parked in a light branch (`GetBranchInfo`). Walk those
+   and read string ports / shader container Filenames. This is the *proven* mechanism (same
+   one that recovers `big_data.jpg` from materials).
+2. `obj.GetParameter(c4d.DescID(c4d.DescLevel(12000)), c4d.DESCFLAGS_GET_0)` — sometimes
+   succeeds where the subscript fails.
+3. `str()` on whatever any of the above returns.
+
+## Version / API Compatibility (2024–2026)
+
+- **`c4d.Filename` was REMOVED.** In 2024–2026 it does not exist as a type. Code like
+  `isinstance(v, c4d.Filename)` raises `module 'c4d' has no attribute 'Filename'` — this is a
+  real crash seen in 2026. Guard with `getattr(c4d, "Filename", None)`.
+- **Filename/texture params are returned as plain `str`** in 2026.3 (confirmed in the docs) —
+  not `maxon.Url`, not a `Filename` object. So a `str`-first handler is correct; keep a
+  `maxon.Url` fallback for in-between versions (2024 returned Url in some cases).
+- `c4d.GenerateTexturePath(docpath, srcname, suggestedfolder)` still exists in 2026.3, returns
+  `str`. The 3-arg call is safe (`service`/`bt` default). Use it to resolve `relative:///`.
+- `DESCFLAGS_GET_0` vs `DESCFLAGS_GET_NONE` differ by version — resolve with `getattr`.
+- **Check the docs for a specific version by editing the URL version segment**, e.g.
+  `https://developers.maxon.net/docs/py/2026_3_0/modules/c4d/index.html` — swap `2026_3_0`
+  for the version your machine (or a colleague's) runs. Always verify against the *actual*
+  installed version, not memory.
+
+## Animation Extraction (CTrack — renderer-independent)
+
+Keyframes live on `CTrack` → `CCurve` → `CKey`, attached to **any** `BaseList2D` (objects,
+tags, materials). This is **core c4d**, fully independent of Redshift — it works regardless of
+renderer and never hits the Filename/maxon-typed failures. Walk every object AND every material
+for exhaustive coverage (don't hand-pick objects).
+
+```python
+def dump_tracks(node, fps):
+    out = []
+    track = node.GetFirstCTrack()
+    while track:
+        desc = track.GetDescriptionID()           # which param is animated
+        levels = [int(desc[i].id) for i in range(desc.GetDepth())]
+        curve = track.GetCurve()
+        keys = []
+        for i in range(curve.GetKeyCount()):
+            k = curve.GetKey(i)
+            keys.append({
+                "frame": k.GetTime().GetFrame(fps),
+                "value": k.GetValue(),
+                "tL": [k.GetTimeLeft().Get(),  k.GetValueLeft()],   # bezier tangents
+                "tR": [k.GetTimeRight().Get(), k.GetValueRight()],
+            })
+        out.append({"name": track.GetName(), "param_levels": levels, "keys": keys})
+        track = track.GetNext()
+    return out
+```
+
+- `desc[i].id` (top level) often maps to a known param ID — e.g. an RS light intensity (11004)
+  or DoF — so you can *label* the animated param using the light/material ID tables.
+- `k.GetValue()` is for float curves; for data-typed keys fall back to `k.GetGeData()`.
+- This replaces hand-curated keyframe JSON: an exhaustive walk catches animation on objects
+  nobody thought to scan.
+
+## Reference Implementation
+
+A complete, defensively-wrapped extractor combining all of the above (lights, RS material
+graphs, exhaustive CTrack animation, node-graph/branch texture recovery, and `relative:///`
+→ absolute resolution) lives at `scripts/c4d/dump_redshift_lights.py` in the refraction repo.
+Every pass is try/except-isolated so a single unsupported API on a given version degrades to an
+empty field instead of aborting the whole dump with a dialog traceback.
