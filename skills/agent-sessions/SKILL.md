@@ -2,16 +2,18 @@
 name: agent-sessions
 description: >
   Search, list, and resume AI agent sessions across Claude Code, Codex CLI, Gemini CLI,
-  opencode, and Hermes Agent.
+  opencode, Hermes Agent, and Cline CLI.
   Use when the user asks to find a past conversation, search session history, resume a
   previous session, list recent agent activity, or check what was discussed in a prior
   session. Also use when asked to "find that conversation where I...", "resume my last
-  codex session", "what did I work on yesterday", or "search my claude history for X".
+  codex session", "read latest convo", "read last messages", "what did I work on
+  yesterday", "search my claude history for X", or gives an agent session id such as
+  `ses_...`, a UUID, or a Cline id like `1782988565588_qqrxi`.
 ---
 
 # Agent Sessions
 
-Search and manage AI coding agent conversation history across Claude Code, Codex CLI, Gemini CLI, opencode, and Hermes Agent.
+Search and manage AI coding agent conversation history across Claude Code, Codex CLI, Gemini CLI, opencode, Hermes Agent, and Cline CLI.
 
 $ARGUMENTS
 
@@ -31,6 +33,7 @@ python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --agent codex
 python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --agent gemini
 python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --agent opencode
 python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --agent hermes
+python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --agent cline
 
 # Title/prompt search first (AND logic, case-insensitive; token-efficient)
 python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --search "metal shader" --search-scope titles --limit 10
@@ -59,6 +62,9 @@ python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --pack <id-1> <id-2> 
 
 # Read bounded excerpts, optionally around a topic/query
 python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --read <id-1> <id-2> --query "logo rotation" --max-chars 5000
+
+# Extract only the user's messages
+python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --read <id-1> <id-2> --role user --max-chars 5000
 
 # Resume a Claude Code session
 python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --resume <session-id>
@@ -105,10 +111,32 @@ open "/Applications/Claude Code History Viewer.app"
 | Gemini CLI | `~/.gemini/tmp/*/chats/session-*.json` | JSON with `sessionId`, `startTime`, `messages[]` array |
 | opencode | `~/.local/share/opencode/opencode.db` | SQLite tables: `session`, `message`, `part`, `project` |
 | Hermes Agent | `~/.hermes/state.db` | SQLite tables: `sessions`, `messages` |
+| Cline CLI | `~/.cline/data/db/sessions.db` + `~/.cline/data/sessions/*/*.messages.json` | SQLite session index plus JSON message transcripts |
 
 Project mapping for Gemini: `~/.gemini/projects.json` maps absolute paths to project names.
 
+Cline sessions created with `cline --data-dir <path>` can be included by setting `AGENT_SESSIONS_CLINE_DATA_DIRS` to a colon-separated path list.
+
 ## Workflow
+
+### First move: never spelunk by hand
+
+If the user asks to read, continue, summarize, compare, or inspect an agent conversation, start with this CLI. Do not begin with broad `find ~`, manual SQLite queries, or copying live agent databases unless this CLI fails.
+
+For explicit session ids, go straight to a pack:
+
+```bash
+python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --pack <session-id> --max-chars 8000
+```
+
+For "latest conversation in this folder/project":
+
+```bash
+python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --project "$PWD" --limit 5
+python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --pack <top-session-id> --max-chars 8000
+```
+
+For "last messages" or "where did it leave off", prefer `--pack` first; it is designed to include recent excerpts. Use `--read --query "topic"` for focused follow-up.
 
 ### Token-efficient retrieval ladder
 
@@ -123,6 +151,7 @@ Use the smallest useful output first:
 7. For handoff context, prefer `--context <id...>` instead of pasting full JSON.
 8. When the user gives session refs and asks to compare, infer, summarize, or conclude from them, run `--pack <id...>` first.
 9. If the pack is too broad or the user gave a topic, run `--read <id...> --query "topic"` for focused excerpts.
+10. If the user asks for only their own prompts/messages, add `--role user`.
 
 ### Finding a past conversation
 
@@ -151,6 +180,12 @@ Use the pack as evidence for cross-session conclusions. If the user asks about a
 
 ```bash
 python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --read <id-1> <id-2> --query "topic terms" --max-chars 5000
+```
+
+If the user only wants their own messages/prompts:
+
+```bash
+python3 /Users/vladmdgolam/Play/radar/tools/agent-sessions --read <id-1> <id-2> --role user --max-chars 5000
 ```
 
 Avoid dumping full transcripts unless the user explicitly asks for exhaustive review.
@@ -185,7 +220,7 @@ When using `--json`, each session object has:
 
 ```json
 {
-  "agent": "claude|codex|gemini|opencode|hermes",
+  "agent": "claude|codex|gemini|opencode|hermes|cline",
   "session_id": "uuid",
   "prompt": "first user message (truncated to 120 chars)",
   "timestamp": "ISO 8601",
@@ -213,11 +248,14 @@ Multiple IDs emit a list with the same fields.
 
 `--pack <id...>` emits one bounded evidence pack per session: metadata, brief, key user requests, and recent or query-relevant excerpts.
 
-`--read <id...>` emits bounded transcript excerpts. Add `--query "terms"` to return message windows around relevant matches instead of broad excerpts.
+`--read <id...>` emits bounded transcript excerpts. For long transcripts it includes an initial orientation excerpt plus a `Recent Excerpts` tail so "last messages" are not crowded out. Add `--query "terms"` to return message windows around relevant matches instead of broad excerpts.
+
+Add `--role user` to output/search only user messages, or `--role assistant` for assistant-only excerpts. Default is `--role all`.
 
 Useful controls:
 
 ```bash
+--role user            # only user messages
 --max-chars 5000        # approximate excerpt budget per session
 --last-turns 8          # recent messages included in packs/overflow reads
 --context-messages 2    # messages before/after each query match
