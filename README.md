@@ -183,6 +183,23 @@ Search, list, and resume AI agent sessions across Claude Code, Codex CLI, Gemini
 - Data sources: `~/.claude/projects/`, `~/.codex/sessions/`, `~/.gemini/tmp/*/chats/`, `~/.local/share/opencode/opencode.db`, `~/.hermes/state.db`, `~/.cline/data/db/sessions.db`
 - Companion tools: `claude-history` (TUI), Claude Code History Viewer (GUI)
 
+### 🌊 fluid-interfaces
+
+Design and review principles for fluid, gestural, physically-responsive interfaces, distilled from Apple's WWDC 2018 "Designing Fluid Interfaces" talk (the team that built the iPhone X gestural UI).
+
+**Use when:**
+- Designing or reviewing touch/gesture interactions (drag, swipe, dismiss, dock)
+- Tuning spring-based motion, elastic/rubberband behaviors, or scroll physics
+- Something "feels off", "feels janky", or "doesn't feel native"
+- Deciding between timed animations and continuous spring behaviors
+
+**Covers:**
+- 8 core principles: instant response, redirectability/interruption, spatial consistency, gesture hinting, lightweight-input/amplified-output, rubberbanding, smooth frames of motion, behavior-over-animation
+- Spring tuning via `damping`/`response` instead of raw mass/stiffness/duration
+- Momentum projection formula for "throw to nearest endpoint" interactions (with Swift code)
+- Gesture mechanics checklist: taps, swipes, one-to-one tracking, continuous feedback, resolving competing gestures
+- Teaching techniques for gestural UI (visual cues, elevation, paired animations, explanations, designing for play)
+
 ## Adding Skills
 
 Each skill lives in `skills/<skill-name>/` with a required `SKILL.md` and optional `references/`, `scripts/`, and `assets/` directories.
