@@ -200,6 +200,23 @@ Design and review principles for fluid, gestural, physically-responsive interfac
 - Gesture mechanics checklist: taps, swipes, one-to-one tracking, continuous feedback, resolving competing gestures
 - Teaching techniques for gestural UI (visual cues, elevation, paired animations, explanations, designing for play)
 
+### ⚡ threejs-perf-loading
+
+Performance and loading patterns for real-time Three.js/WebGL/WebGPU sites, based on modern approaches and best practices from top-notch studios and developers (Ivress, Threejspunk, igloo.inc, Noomo Agency) rather than generic advice.
+
+**Use when:**
+- Eliminating the loading-spinner-to-scene freeze/jank (uncompiled shader pipelines hitting the first real frame)
+- Designing an adaptive-quality or perf-budget system, or desktop/mobile post-processing tiers
+- Tuning scroll/camera damping so input can't "outrun" a max speed
+- Deciding where to spend a render-loop's cost (MRT routing, layer-split passes, on-demand shadows, GPU-resident particles, proximity gating)
+
+**Covers:**
+- Shader/pipeline warmup: force every material to compile behind the loading screen before firing the reveal event, including per-camera `compileAsync` for layer-masked cameras
+- Render-loop cost discipline: MRT emissive routing for selective bloom, layer-split passes, `shadowMap.autoUpdate = false`, GPU-resident particle motion, proximity + hysteresis gating, fused post-processing passes
+- Adaptive quality: one flat perf-budget config object, one-way FPS-latched degradation, UA-based gating, genuinely different desktop/mobile post tiers
+- Scroll/input smoothing: step-clamped damped lerp (the `maxSpeed` primitive behind drei's `ScrollControls`) vs. direct authored-timeline scrubbing
+- Transmission/glass materials: owning your render target for a static-fallback trick, and why a shared pre-blurred buffer beats a hand-optimized per-fragment sampler
+
 ## Adding Skills
 
 Each skill lives in `skills/<skill-name>/` with a required `SKILL.md` and optional `references/`, `scripts/`, and `assets/` directories.
