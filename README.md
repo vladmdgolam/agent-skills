@@ -202,18 +202,21 @@ Design and review principles for fluid, gestural, physically-responsive interfac
 
 ### ⚡ threejs-perf-loading
 
-Performance and loading patterns for real-time Three.js/WebGL/WebGPU sites, based on modern approaches and best practices from top-notch studios and developers (Ivress, Threejspunk, igloo.inc, Noomo Agency) rather than generic advice.
+Performance and loading patterns for real-time Three.js/WebGL/WebGPU sites, based on modern approaches and best practices from top-notch studios and developers (Ivress, Threejspunk, igloo.inc, Noomo Agency) plus live production profiling, rather than generic advice.
 
 **Use when:**
 - Eliminating the loading-spinner-to-scene freeze/jank (uncompiled shader pipelines hitting the first real frame)
-- Designing an adaptive-quality or perf-budget system, or desktop/mobile post-processing tiers
+- Designing an adaptive-quality or perf-budget system, or desktop/mobile post-processing tiers — including hardening the FPS sampler against false-positive degrades
+- Attributing an unexplained slow frame to a named cause with in-app tooling
 - Tuning scroll/camera damping so input can't "outrun" a max speed
 - Deciding where to spend a render-loop's cost (MRT routing, layer-split passes, on-demand shadows, GPU-resident particles, proximity gating)
 
 **Covers:**
 - Shader/pipeline warmup: force every material to compile behind the loading screen before firing the reveal event, including per-camera `compileAsync` for layer-masked cameras
-- Render-loop cost discipline: MRT emissive routing for selective bloom, layer-split passes, `shadowMap.autoUpdate = false`, GPU-resident particle motion, proximity + hysteresis gating, fused post-processing passes
-- Adaptive quality: one flat perf-budget config object, one-way FPS-latched degradation, UA-based gating, genuinely different desktop/mobile post tiers
+- Loader reveal gating on real rendered frames (not asset progress or timers), paused-not-hidden loader content, and chunking one-shot procedural synthesis (reverb impulses, noise textures) off the critical frame
+- Render-loop cost discipline: MRT emissive routing for selective bloom, layer-split passes, `shadowMap.autoUpdate = false`, GPU-resident particle motion, proximity + hysteresis gating, fused post-processing passes, stable-identity effects arrays, and auditing hidden render-target allocations in library material wrappers (remount dispose storms)
+- Adaptive quality: one flat perf-budget config object, one-way FPS-latched staged degradation with four production-tested false-positive guards (post-arm discard windows, outlier-stall window rejection, settle windows, escalation gated on the cheaper lever having failed), UA-based gating, genuinely different desktop/mobile post tiers
+- Frame attribution tooling: per-frame marks buffer, GL-resource delta sampler, dispose tracer with call-site stacks, module-scope boot tracer for the pre-mount window, React commit profiling — and treating a fully-instrumented-yet-silent slow frame as proof of GC/GPU-driver cost
 - Scroll/input smoothing: step-clamped damped lerp (the `maxSpeed` primitive behind drei's `ScrollControls`) vs. direct authored-timeline scrubbing
 - Transmission/glass materials: owning your render target for a static-fallback trick, and why a shared pre-blurred buffer beats a hand-optimized per-fragment sampler
 
