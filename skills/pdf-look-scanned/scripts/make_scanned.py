@@ -98,18 +98,24 @@ def replace_signature(page_img, real_sig, clear_box, place_xy, sig_size=0.11):
     draw = ImageDraw.Draw(page)
     draw.rectangle([int(w * cl), int(h * ct), int(w * cr), int(h * cb)], fill=(255, 255, 255))
 
+    # Compute the alpha mask on the full-resolution image BEFORE resizing. Resizing an RGB
+    # image with a sharp ink/background edge via LANCZOS can ring (overshoot/undershoot) right
+    # at that edge, so if the mask were computed post-resize, ringing pixels that dip just below
+    # the threshold get treated as fully-opaque "ink" -- visible as a faint gray halo/line
+    # tracing the ink's silhouette. Masking first and resizing the whole RGBA together lets the
+    # alpha channel interpolate smoothly at edges instead of hard-flipping to opaque.
+    sig_rgba_full = real_sig.convert("RGBA")
+    sig_arr_full = np.array(sig_rgba_full)
+    gray_vals_full = np.mean(sig_arr_full[:, :, :3], axis=2)
+    sig_arr_full[:, :, 3] = np.where(gray_vals_full > 220, 0, 255).astype(np.uint8)
+    sig_rgba_full = Image.fromarray(sig_arr_full)
+
     sig_w, sig_h = real_sig.size
     target_w = int(w * sig_size)
     scale = target_w / sig_w
     new_w = int(sig_w * scale)
     new_h = int(sig_h * scale)
-    resized = real_sig.resize((new_w, new_h), Image.LANCZOS)
-
-    sig_rgba = resized.convert("RGBA")
-    sig_arr = np.array(sig_rgba)
-    gray_vals = np.mean(sig_arr[:, :, :3], axis=2)
-    sig_arr[:, :, 3] = np.where(gray_vals > 220, 0, 255).astype(np.uint8)
-    sig_transparent = Image.fromarray(sig_arr)
+    sig_transparent = sig_rgba_full.resize((new_w, new_h), Image.LANCZOS)
 
     px, py = place_xy
     paste_x = int(w * px)
