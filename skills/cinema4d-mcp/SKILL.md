@@ -555,6 +555,35 @@ print(json.dumps(material_colors, indent=2))
 - For multi-layer or metallic RS materials, the sampled color is an approximation — use it for identification (which material is roughly red vs. blue) rather than precise color matching.
 - Cross-reference with `MODATA_CLONE` indices to build a clone -> material -> color lookup table.
 
+## Rendering ground truth via Picture Viewer (Redshift)
+
+Scripted `c4d.documents.RenderDocument()` may return `RENDERRESULT_OK` with an
+all-black bitmap on some Redshift builds (every variant: main thread, clone,
+autosave, BatchRender). The reliable path is the async Picture Viewer render:
+
+```python
+import c4d
+doc = c4d.documents.GetActiveDocument()
+rd = doc.GetActiveRenderData()
+# CRITICAL: default frame sequence may be "All Frames" — firing PV then
+# renders the entire timeline (an accidental 148-frame overnight job).
+rd.GetDataInstance()[c4d.RDATA_FRAMESEQUENCE] = c4d.RDATA_FRAMESEQUENCE_CURRENTFRAME
+doc.SetTime(c4d.BaseTime(FRAME, doc.GetFps()))
+doc.ExecutePasses(None, True, True, True, c4d.BUILDFLAGS_NONE)
+c4d.CallCommand(12099)   # Render to Picture Viewer — ASYNC, returns immediately
+```
+
+- Poll completion with `c4d.CheckIsRunning(c4d.CHECKISRUNNING_EXTERNALRENDERING)`
+  (1 while rendering, 0 when done).
+- Stop a running PV render programmatically: `c4d.CallCommand(430000731)`.
+- **No manual save needed**: if the render settings have a save path, Picture
+  Viewer AUTOSAVES each finished frame to
+  `<save-path>/<scene-name>/<scene-name>_NNNN.png` — check there before asking
+  a human to File→Save As. (Discovered after two sessions of manual saving.)
+- Never call `RenderDocument()` from code already on C4D's main thread (the
+  plugin dispatch queue) — it deadlocks: rendering needs the event loop the
+  blocked call is holding.
+
 ## Troubleshooting Quick Reference
 
 | Symptom | Likely Cause | Fix |
