@@ -555,6 +555,23 @@ print(json.dumps(material_colors, indent=2))
 - For multi-layer or metallic RS materials, the sampled color is an approximation — use it for identification (which material is roughly red vs. blue) rather than precise color matching.
 - Cross-reference with `MODATA_CLONE` indices to build a clone -> material -> color lookup table.
 
+## Zero-click backend workflow
+
+The MCP plugin auto-starts its socket server when Cinema boots (headless
+MessageData pump — no dialog needed; commit 94f9cbb in the plugin repo).
+To (re)start Cinema as a backend from a shell, music-shader has the
+pattern:
+
+```sh
+./scripts/c4d-backend.sh --restart [scene.c4d]   # kill -> open -> wait for port 5555 -> READY
+```
+
+Deadlock warning: do NOT call `c4d.documents.InsertBaseDocument` /
+`SetActiveDocument` from MCP scripts — they hang Cinema from the plugin
+dispatch thread (same class as the RenderDocument deadlock). Build probe
+objects INSIDE the already-active document instead, hide originals, and
+clean up after.
+
 ## Rendering ground truth via Picture Viewer (Redshift)
 
 Scripted `c4d.documents.RenderDocument()` may return `RENDERRESULT_OK` with an
