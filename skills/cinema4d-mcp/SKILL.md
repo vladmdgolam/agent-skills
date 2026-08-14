@@ -572,6 +572,38 @@ dispatch thread (same class as the RenderDocument deadlock). Build probe
 objects INSIDE the already-active document instead, hide originals, and
 clean up after.
 
+## The emission-probe method: sampling a renderer's procedural field
+
+When you need a renderer's EXACT procedural field (noise, gradient, any
+shader node) and CPU reimplementation fails, use the renderer as an oracle:
+
+1. Clone the material; rewire `<node>.outcolor -> standardmaterial
+   .emission_color` (weight 1); zero base/refl/refr weights. Undo any node
+   colorization when decoding (e.g. black->green ramp: value = G channel,
+   sRGB-linearized).
+2. Put it on a plane at known world coordinates; a long-lens perspective
+   camera is fine — the projection of a PLANE at fixed depth is exactly
+   affine, no ortho needed (RS + parallel cameras can be flaky anyway).
+3. Every rendered pixel is a field sample at a known coordinate. Sweep the
+   plane's z for volume slices; scene time for the temporal axis.
+4. Emission-only renders converge in seconds even under a heavy render
+   preset.
+
+Verified findings that motivated this (YM shader project): Redshift's
+"Maxon noise" is NOT lattice-compatible with `c4d.utils.noise.C4DNoise`
+(max field correlation 0.23 across scale/octave/orientation sweeps) — CPU
+bakes can only ever be statistical cousins. Camera gotcha: a camera at -z
+looking toward +z renders the plane X-MIRRORED relative to world axes —
+verify orientation against a known-asymmetric reference before trusting
+the decode.
+
+Batch-render the sweep: single-frame Picture Viewer autosave is
+unreliable, but the Batch Render queue (`c4d.documents.GetBatchRender()`)
+saves every frame of a MANUAL frame-range job dependably. Save one .c4d
+variant per configuration (SaveDocument creates no directories — mkdir
+first), AddFile them all, SetRendering(BR_START). 360 emission renders
+took ~25 min.
+
 ## Rendering ground truth via Picture Viewer (Redshift)
 
 Scripted `c4d.documents.RenderDocument()` may return `RENDERRESULT_OK` with an
