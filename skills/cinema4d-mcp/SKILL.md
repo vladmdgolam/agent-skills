@@ -384,6 +384,17 @@ for n in inner:
 - All input port values (colors, intensities, roughness, refraction weight, texture paths, noise params, ramp stops, etc.)
 - `GetDefaultValue()` and `GetEffectivePortValue()` both work
 
+**⚠ API drift (observed C4D 2024.2, 2026-08):** on some builds
+`GetDefaultValue()` returns `None` for every port (customized or not) and
+`GetEffectivePortValue()` does not exist on the GraphNode wrapper; the
+graph STRUCTURE still enumerates fine via `GetInnerNodes(ALL_MASK)`.
+Also `dir(port)` can raise "expected generic datatype capsule". When
+values are unreadable, fall back to empirical extraction: render one
+small frame (batch queue, e.g. 295x640 single frame ≈ 7 min RS) and
+measure colors from pixels, or use the emission-probe pattern for field
+values. That answered "which node carries the preset color" faster than
+fighting the API.
+
 **To find specific node types**, use:
 ```python
 result = maxon.GraphModelHelper.FindNodesByAssetId(
@@ -645,6 +656,7 @@ c4d.CallCommand(12099)   # Render to Picture Viewer — ASYNC, returns immediate
 | Script times out on large range | Frame range too large for single MCP call | Chunk into 100-200 frame batches, merge results |
 | `MODATA_CLONE` all 0.0 | Single-child cloner or no child cycling | Expected behavior — all clones share one child |
 | Keyframes on effector not animating output | Takes system overriding take | Check `doc.GetTakeData().GetCurrentTake()` |
+| Every batch job errors instantly with Redshift "Out Of Memory", or an interactive PV render (`CallCommand(12099)`) never errors but `CheckIsRunning(CHECKISRUNNING_EXTERNALRENDERING)` stays `1` far longer than a trivial scene should take to converge | Don't assume real memory contention — a lapsed/expired Redshift license produces exactly these two symptoms (misleading instant "OOM" on batch jobs; license-check stall reads as an infinite hang on PV) | Isolate: load one scene directly (not the batch queue), fire a trivial single-frame PV render (ideally an emission-probe scene, which should converge in seconds per above), and poll `CHECKISRUNNING_EXTERNALRENDERING`. Hangs well past that with no error = check the RS license, not RAM. Freeing system memory will not fix a license problem. |
 
 ## Known Errors & Workarounds
 
