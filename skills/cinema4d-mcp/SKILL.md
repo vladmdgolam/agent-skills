@@ -425,6 +425,22 @@ if bmp:
     r, g, b = bmp.GetPixel(bmp.GetBw() // 2, bmp.GetBh() // 2)
 ```
 
+**⚠ Also works when the Redshift LICENSE HAS LAPSED, not just when RS is
+absent.** `GetPreview()` returns a bitmap C4D already cached from the last
+render/interactive preview — it does not trigger a new render, so it is
+unaffected by a license check that blocks `RenderDocument()` / batch / PV
+rendering outright. Confirmed live (2026-08): with the license lapsed,
+`CallCommand(12099)` (PV render) hung indefinitely with
+`CHECKISRUNNING_EXTERNALRENDERING` stuck at `1`, while `mat.GetPreview(0)`
+on the same document returned instantly with real (non-placeholder) pixel
+data. The near-instant response itself is the tell that you're reading a
+cache, not paying for a render — if a "preview" call takes seconds, that's
+a different code path. When a license lapses mid-project, this is the
+fastest way to keep pulling *some* per-material data (coarse average
+color via a 3x3 or denser pixel-grid sample) without needing the license
+back — see the OOM/hang troubleshooting row below for the render-side
+symptoms this pairs with.
+
 ### Node Kind Constants
 
 | Kind | Value | Meaning |
@@ -565,6 +581,7 @@ print(json.dumps(material_colors, indent=2))
 - Force a preview render by opening the Material Manager and letting thumbnails regenerate before running this script.
 - For multi-layer or metallic RS materials, the sampled color is an approximation — use it for identification (which material is roughly red vs. blue) rather than precise color matching.
 - Cross-reference with `MODATA_CLONE` indices to build a clone -> material -> color lookup table.
+- This also survives a lapsed RS license (it reads a cache, doesn't render) — see the note under "Fallback: Preview Bitmap Sampling" above.
 
 ## Zero-click backend workflow
 
