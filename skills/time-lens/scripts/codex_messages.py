@@ -5,6 +5,9 @@ Count Codex CLI user prompts for a specific project, with per-day breakdown.
 Data source: ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
   - session_meta entry: payload.cwd = project directory
   - event_msg entry: payload.type == "user_message" = actual user prompt
+  - every other timestamped line (response_item: reasoning/custom_tool_call/
+    message, event_msg: agent_message/patch_apply_end/token_count/...) marks
+    the agent actively executing between prompts
 
 Usage:
   python3 codex_messages.py --project-path /abs/path/to/repo
@@ -15,9 +18,20 @@ Output JSON:
     "project_path": "...",
     "total_user_messages": N,
     "daily": {"YYYY-MM-DD": count, ...},
-    "timestamps": [epoch_float, ...],
+    "timestamps": [epoch_float, ...],           # user prompts only — for prompt counts
+    "activity_timestamps": [epoch_float, ...],  # every event, incl. agent execution — for hour reconciliation
     "sessions_found": N
   }
+
+Why activity_timestamps exists: a lone user prompt with no reply for 45+
+minutes looks, from `timestamps` alone, like a 0-duration "point" session —
+but the agent may have spent that whole 45 minutes running tools, applying
+patches, and reasoning between the prompt and the next one. Reconciliation
+against user-prompt timestamps alone silently drops that time (confirmed by
+inspecting raw rollout files: hundreds of response_item/event_msg entries can
+fall inside a single "gap" that looks empty in `timestamps`). Use
+`activity_timestamps` for session/interval detection; keep `timestamps` for
+prompt-count metrics.
 """
 
 import os
@@ -32,14 +46,16 @@ def scan_sessions(sessions_dir, project_path=None, name_filter=None):
     """
     Scan Codex session files. Filter by cwd == project_path (exact) or
     basename match for name_filter (substring).
-    Returns (daily counts, sorted timestamp list, session count).
+    Returns (daily counts, sorted user-prompt timestamps, session count,
+    sorted activity timestamps [every timestamped event while cwd matches]).
     """
     sessions_dir = os.path.expanduser(sessions_dir)
     if not os.path.isdir(sessions_dir):
-        return {}, [], 0
+        return {}, [], 0, []
 
     daily = defaultdict(int)
     timestamps = []
+    activity_timestamps = []
     sessions_found = 0
 
     for jsonl_path in sorted(glob.glob(
@@ -47,6 +63,7 @@ def scan_sessions(sessions_dir, project_path=None, name_filter=None):
     )):
         cwd = None
         session_prompts = []
+        session_activity = []
 
         for line in open(jsonl_path, "r", encoding="utf-8"):
             line = line.strip()
@@ -57,7 +74,8 @@ def scan_sessions(sessions_dir, project_path=None, name_filter=None):
             except json.JSONDecodeError:
                 continue
 
-            # Extract cwd from session_meta (always first entry)
+            # Extract cwd from session_meta (may recur in resumed/long-lived
+            # session files — always re-check, don't assume it's set once)
             if obj.get("type") == "session_meta":
                 cwd = obj.get("payload", {}).get("cwd", "")
                 continue
@@ -66,31 +84,41 @@ def scan_sessions(sessions_dir, project_path=None, name_filter=None):
             if cwd is None:
                 continue
             if project_path and cwd != project_path:
-                break  # wrong project, skip rest of file
+                continue  # wrong project for this stretch of the file — keep scanning (cwd can change)
             if name_filter and name_filter.lower() not in os.path.basename(cwd).lower():
-                break
+                continue
 
-            # Count user prompts
+            ts_str = obj.get("timestamp", "")
+            if not ts_str:
+                continue
+            try:
+                dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                ts_epoch = dt.timestamp()
+            except Exception:
+                continue
+
+            # Every timestamped line while cwd matches = agent activity
+            # (response_item: reasoning/custom_tool_call/message;
+            #  event_msg: agent_message/patch_apply_end/token_count/user_message/...)
+            session_activity.append(ts_epoch)
+
+            # Count user prompts specifically (for prompt-count metrics)
             if (obj.get("type") == "event_msg" and
                     obj.get("payload", {}).get("type") == "user_message"):
-                ts_str = obj.get("timestamp", "")
-                try:
-                    dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                    ts_epoch = dt.timestamp()
-                    date = dt.strftime("%Y-%m-%d")
-                    session_prompts.append((date, ts_epoch))
-                except Exception:
-                    session_prompts.append((None, None))
+                date = dt.strftime("%Y-%m-%d")
+                session_prompts.append((date, ts_epoch))
 
-        if session_prompts:
+        if session_prompts or session_activity:
             sessions_found += 1
             for date, ts in session_prompts:
                 if date:
                     daily[date] += 1
                 if ts:
                     timestamps.append(ts)
+            activity_timestamps.extend(session_activity)
 
-    return dict(sorted(daily.items())), sorted(timestamps), sessions_found
+    return (dict(sorted(daily.items())), sorted(timestamps), sessions_found,
+            sorted(activity_timestamps))
 
 
 def find_alternate_paths(sessions_dir, project_path):
@@ -134,7 +162,7 @@ def main():
         print(json.dumps({"error": "Provide --project-path or --filter"}))
         return
 
-    daily, timestamps, sessions_found = scan_sessions(
+    daily, timestamps, sessions_found, activity_timestamps = scan_sessions(
         args.sessions_dir, args.project_path, args.filter
     )
 
@@ -143,6 +171,7 @@ def main():
         "total_user_messages": sum(daily.values()),
         "daily": daily,
         "timestamps": timestamps,
+        "activity_timestamps": activity_timestamps,
         "sessions_found": sessions_found,
     }
 

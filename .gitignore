@@ -4,4 +4,5 @@ node_modules/
 .vscode/settings.json
 .research
 todo.md
-wip/
+wip/__pycache__/
+*.pyc

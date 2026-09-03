@@ -20,11 +20,16 @@ All scripts live in `scripts/` next to this SKILL.md. Run them with `python3`:
 
 | Script | Purpose | Key flags |
 |--------|---------|-----------|
-| `git_sessions.py` | Parse git history → sessions → hours | `<repo> --since YYYY-MM-DD --until YYYY-MM-DD` |
+| `git_sessions.py` | Parse git history → sessions → hours | `<repo> --since YYYY-MM-DD --until YYYY-MM-DD [--raw]` |
 | `wakatime_fetch.py` | WakaTime API → daily hours, filtered to project | `--start YYYY-MM-DD --end YYYY-MM-DD --project name` |
-| `claude_messages.py` | Claude Code user prompts per day + timestamps | `--project-path /abs/path` or `--filter name` |
-| `codex_messages.py` | Codex CLI user prompts per day + timestamps | `--project-path /abs/path` or `--filter name` |
-| `cursor_messages.py` | Cursor IDE user prompts per day + timestamps | `--project-path /abs/path` or `--filter name` |
+| `claude_messages.py` | Claude Code user prompts + activity timestamps per day | `--project-path /abs/path` or `--filter name` |
+| `codex_messages.py` | Codex CLI user prompts + activity timestamps per day | `--project-path /abs/path` or `--filter name` |
+| `cursor_messages.py` | Cursor IDE user prompts + activity timestamps per day | `--project-path /abs/path` or `--filter name` |
+| `reconcile.py` | Merges the JSON output of the scripts above into a single hour estimate, with an optional supervised-vs-unattended split | `--git f.json --claude f.json --codex f.json --since Y-M-D --until Y-M-D [--gap-hours 0.5] [--presence-window-min 10] [--tz Area/City] [--daily]` |
+
+`claude_messages.py`, `codex_messages.py`, and `cursor_messages.py` each output **two** timestamp arrays: `timestamps` (user prompts only — for prompt-count metrics) and `activity_timestamps` (every timestamped event, including tool-call/tool-result cycles and assistant replies — use this one for reconciliation). See "Use `activity_timestamps`, not `timestamps`" in [references/reconciliation.md](references/reconciliation.md) for why this distinction matters — using prompt-only timestamps for hour reconciliation silently drops real work time.
+
+**Use `reconcile.py` instead of hand-rolling the merge in Python.** It's a deterministic implementation of the algorithm below — run it on the JSON files the other scripts already produced rather than re-deriving the merge/sessionize/intersect logic inline each time. Hand-rolling it live is exactly how a real bug happened once: two different gap-threshold runs (15min vs 30min "engine time") got compared against each other as if they were the same base, producing a nonsensical number. `reconcile.py` fixes the gap threshold and presence window as explicit flags so every run is reproducible and comparable.
 
 ## Workflow
 
@@ -109,37 +114,46 @@ See [references/folder-move-detection.md](references/folder-move-detection.md) f
 
 ### 3. Reconcile hours
 
-**Merged total = best estimate** (git ∪ Claude ∪ Codex ∪ Cursor ∪ WakaTime intervals, no double-counting):
+**Merged total = best estimate** (git ∪ Claude ∪ Codex ∪ Cursor ∪ WakaTime intervals, no double-counting). Run `reconcile.py` on the JSON files from step 2 rather than hand-rolling the merge:
 
-```python
-GAP_H = 1.5  # hours between events → new session
-
-# 1. Collect intervals from git (start/end per session, converted to UTC epoch)
-# 2. Collect intervals from Claude timestamps (detect sessions via gap threshold)
-# 3. Collect intervals from Codex timestamps (same gap threshold)
-# 4. Collect intervals from Cursor timestamps (same gap threshold)
-# 5. Collect intervals from WakaTime "intervals" field (already [start, end] pairs in UTC epoch)
-# 6. Combine all intervals into one list, sort by start
-# 7. Merge overlapping/adjacent intervals:
-#    for each interval, if next.start - cur.end <= GAP_H * 3600 → extend current
-# 8. For each merged interval: est = max(end - start + 0.5h, 0.5h)
-# 9. total = Σ est
-
-# Data formats (all UTC epoch floats):
-# - git_sessions.py: convert local times using timezone offset from git log
-# - claude_messages.py "timestamps": point events → detect sessions via gap
-# - codex_messages.py "timestamps": point events → detect sessions via gap
-# - cursor_messages.py "timestamps": point events → detect sessions via gap
-# - wakatime_fetch.py "intervals": already [start_epoch, end_epoch] pairs
-#   (fetched from /durations API, per-file intervals pre-merged with 60s tolerance)
+```bash
+python3 reconcile.py \
+  --git git_backend.json --git git_frontend.json \
+  --claude claude_backend.json --claude claude_frontend.json \
+  --codex codex_backend.json --codex codex_frontend.json \
+  --cursor cursor_backend.json \
+  --waka waka.json \
+  --since 2026-06-29 --until 2026-08-19 \
+  --tz Europe/Berlin --daily
 ```
+
+(`--git`/`--claude`/`--codex`/`--cursor`/`--waka` are all repeatable — pass one per sub-repo for multi-repo projects; `reconcile.py` merges them together.)
+
+This does, deterministically:
+1. Take git's raw commit `timestamps`, and Claude/Codex/Cursor's `activity_timestamps` (**not** `timestamps` — see below) as point events.
+2. Sessionize each source independently via the gap threshold (`--gap-hours`, default 0.5h; use 0.25 for a stricter/conservative estimate).
+3. Union WakaTime's ready-made `[start, end]` intervals in alongside the sessionized point sources.
+4. Merge everything that overlaps or sits within the gap threshold into final sessions.
+5. Sum raw durations — **no `+0.5h` buffer, no `0.5h` floor** (legacy behavior; see reconciliation.md if you need it, e.g. for a `timestamps`-only source with no activity-level granularity).
+6. If `--presence-window-min > 0` (default 10): also compute a **supervised vs. unattended split** — how much of the merged engine time falls within that window of an actual user prompt or git commit, vs. how much is the agent running with no human check-in nearby. See "Supervised vs. unattended time" below.
+7. If `--daily`: bucket per day using an 08:00 local-time boundary (`--day-boundary-hour`, default 8) so an overnight session doesn't get split across two days in the table.
+
+**Use `activity_timestamps`, never `timestamps`, for engine-time reconciliation** (this is what `reconcile.py` does automatically). `timestamps` is prompt-only and will make an actively-worked session look like a single 0-duration point whenever the agent kept running after the last recorded prompt. `activity_timestamps` includes tool-call/tool-result cycles and assistant replies, so it reflects when the agent was actually still working. See [references/reconciliation.md](references/reconciliation.md) for the concrete example (a "0-duration" session that turned out to be ~50 minutes of continuous work) and why the gap threshold dropped from the old 1.5h default to 0.5h.
+
+**Don't compare `engine_hours` across different `--gap-hours` runs as if they're the same measurement** — a 15min-threshold total and a 30min-threshold total are two different quantities. If you need both, run `reconcile.py` twice and label each result with its threshold.
+
+#### Supervised vs. unattended time
+
+`engine_hours` measures when the *agent* was active — not necessarily when the human was watching. If a task ran autonomously for 20+ minutes with no new prompt, that time still counts as engine time but may not reflect real hands-on-keyboard effort. `reconcile.py`'s supervised split addresses this: it builds a "presence window" of `± --presence-window-min` minutes around every real user prompt or git commit, and reports how much of `engine_hours` falls inside vs. outside that window.
+
+The window size is a real sensitivity knob, not a solved parameter — on one real project, ±5min gave 72% supervised, ±30min gave 99%. **±10min is the recommended default**: long enough to cover a normal "read the output, think, reply" pause, tight enough that a genuine away-from-keyboard stretch still shows up as unattended. Always report which window was used alongside the number.
 
 Why merge matters: AI agent prompts (Claude/Codex/Cursor) often appear minutes before/after git commits in the same work session. WakaTime captures IDE keystrokes that may fall between commits. A user might research with Claude, use Cursor's AI, write code (WakaTime), then commit (git) — all one session. Union of all five sources captures the true session boundaries without double-counting.
 
 - The merged total replaces "git-only" as the primary estimate
 - WakaTime hours shown for reference (active keystrokes only, always lower)
 
-See [references/reconciliation.md](references/reconciliation.md) for full pseudocode, the session detection function, and the hour estimate formula.
+See [references/reconciliation.md](references/reconciliation.md) for the full underlying algorithm `reconcile.py` implements, the day-boundary bucketing rationale, and the legacy buffer/floor formula.
 
 ### 4. Generate HTML dashboard
 
@@ -175,6 +189,7 @@ Save as `<project-dir>/work-hours-analysis.html`.
 # [Project] - Work Hours Analysis
 ## Summary
 **Estimated Total Working Hours: Xh** (based on commit timing analysis)
+**Supervised: Xh (Y%) · Unattended: Xh** (±10min presence window — see Methodology)
 
 | Date | Sessions | Time Range | Git Est. | WakaTime | Commits | Project |
 ...
@@ -194,8 +209,9 @@ project-a  ████████████████████  45%  (~
 ...
 
 ## Methodology
-- Session Detection: commits within 1.5h gap = same session
-- Hour Estimate: Σ(session_duration + 0.5h buffer), min 0.5h/session
+- Session Detection: events within 0.5h gap = same session (git commits + Claude/Codex/Cursor activity_timestamps, not just prompts)
+- Hour Estimate: Σ(session_duration), no buffer, no floor — activity_timestamps already captures real start/end
+- Supervised vs. Unattended: hours within ±10min of a real user prompt/commit count as supervised; the rest is the agent running with no recent human check-in
 - Why Git > WakaTime: WakaTime only tracks active IDE typing; git includes thinking/research/AI prompting
 ```
 
@@ -275,7 +291,7 @@ Save as `<project-dir>/total_hours.md`.
 
 5. User confirms. Re-run: `python3 claude_messages.py --project-path /Users/bob/old-market/backend`. Merge timestamps from both runs.
 
-6. Merge git sessions from both repos (backend + frontend), sort, re-merge within 1.5h gap. Reconcile with all sources.
+6. Merge git commit timestamps from both repos (backend + frontend) with Claude's `activity_timestamps`, sort, re-merge within the 0.5h gap threshold. Reconcile with all sources.
 
 **Result:** "Total estimated time: **84.7h** across 3 months (backend + frontend combined, including Claude history from the old path `/Users/bob/old-market/backend`)."
 
@@ -374,13 +390,13 @@ python3 claude_messages.py --filter marketplace
 
 **WakaTime auth and config:** The script reads `~/.wakatime.cfg` automatically. Always pass `--project` for per-project data. WakaTime tracks active keystrokes only — always lower than git estimate. Heavy Claude Code usage creates a large gap between WakaTime and actual effort. See [references/data-sources.md](references/data-sources.md) for full auth setup, config format, and limitations.
 
-**Codex CLI data source:** `codex_messages.py` reads `~/.codex/sessions/YYYY/MM/DD/rollup-*.jsonl`. Each file has `session_meta` (first entry with `payload.cwd` + `payload.id`), `event_msg` entries with `payload.type == "user_message"` for actual prompts, and `turn_context` entries for boundaries. Output includes `timestamps` (UTC epoch floats) and `alternate_paths` for folder-move detection. See [references/data-sources.md](references/data-sources.md) for full file structure.
+**Codex CLI data source:** `codex_messages.py` reads `~/.codex/sessions/YYYY/MM/DD/rollup-*.jsonl`. Each file has `session_meta` (with `payload.cwd` + `payload.id` — can recur mid-file for long-lived/resumed sessions, so `cwd` is tracked continuously rather than assumed fixed), `event_msg` entries with `payload.type == "user_message"` for actual prompts, and many other timestamped `response_item`/`event_msg` entries (tool calls, patches, reasoning) marking agent execution between prompts. Output includes `timestamps` (prompts only), `activity_timestamps` (every timestamped event — use this for reconciliation), and `alternate_paths` for folder-move detection. See [references/data-sources.md](references/data-sources.md) for full file structure.
 
-**Claude Code data sources:** `claude_messages.py` uses two sources: `~/.claude/history.jsonl` (primary; `project` field = abs path, `timestamp` in ms) and `~/.claude/projects/<encoded>/*.jsonl` (session files; `cwd` field, `type=="user"` entries, ISO timestamps). Encoded dir name format: `/Users/foo/bar` → `-Users-foo-bar`. Always prefer `--project-path` over `--filter`. See [references/data-sources.md](references/data-sources.md) for full field reference.
+**Claude Code data sources:** `claude_messages.py` uses two sources: `~/.claude/history.jsonl` (primary; `project` field = abs path, `timestamp` in ms, prompts only) and `~/.claude/projects/<encoded>/*.jsonl` (session files; `cwd` field, `type=="user"` and `type=="assistant"` entries, ISO timestamps). Encoded dir name format: `/Users/foo/bar` → `-Users-foo-bar`. Always prefer `--project-path` over `--filter`. Output includes `timestamps` (real user prompts only) and `activity_timestamps` (user prompts + `tool_result` entries + assistant entries — use this for reconciliation). See [references/data-sources.md](references/data-sources.md) for full field reference.
 
-**Cursor IDE data sources:** `cursor_messages.py` reads from Cursor's SQLite databases (`.vscdb` files). Primary source is the platform-specific `state.vscdb` (macOS: `~/Library/Application Support/Cursor/User/globalStorage/`, Windows: `%APPDATA%\Cursor\User\globalStorage\`, Linux: `~/.config/Cursor/User/globalStorage/`) — the `cursorDiskKV` table contains `composerData:{sessionId}` entries (with `workspaceUri` for project matching) and `bubbleId:{sessionId}:{messageId}` entries (with per-message timestamps). Fallback source is workspace-level `state.vscdb` files under `workspaceStorage/*/`, with `workspace.json` mapping each workspace to its project folder. Databases are opened read-only. The script auto-detects the platform. Output format matches Claude/Codex scripts: `timestamps` array + `alternate_paths` for folder-move detection. See [references/data-sources.md](references/data-sources.md) for full field reference.
+**Cursor IDE data sources:** `cursor_messages.py` reads from Cursor's SQLite databases (`.vscdb` files). Primary source is the platform-specific `state.vscdb` (macOS: `~/Library/Application Support/Cursor/User/globalStorage/`, Windows: `%APPDATA%\Cursor\User\globalStorage\`, Linux: `~/.config/Cursor/User/globalStorage/`) — the `cursorDiskKV` table contains `composerData:{sessionId}` entries (with `workspaceUri` for project matching) and `bubbleId:{sessionId}:{messageId}` entries (with per-message timestamps, `type=1` = user). Fallback source is workspace-level `state.vscdb` files under `workspaceStorage/*/`, with `workspace.json` mapping each workspace to its project folder. Databases are opened read-only. The script auto-detects the platform. Output format matches Claude/Codex scripts: `timestamps` (user bubbles only) + `activity_timestamps` (every bubble/message, any role — use this for reconciliation) + `alternate_paths` for folder-move detection. See [references/data-sources.md](references/data-sources.md) for full field reference.
 
-**Reconciliation algorithm:** Gap threshold is 1.5h. All sources converted to UTC epoch float intervals. Intervals merged if gap ≤ threshold. Per-interval estimate: `max(duration + 0.5h, 0.5h)`. Merged total = Σ estimates. See [references/reconciliation.md](references/reconciliation.md) for full pseudocode and the session detection helper function.
+**Reconciliation algorithm (updated 2026-08-19):** Run via `reconcile.py`, not hand-rolled. Gap threshold is 0.5h by default (0.25h for a stricter estimate), applied to `activity_timestamps` — not `timestamps` — for Claude/Codex/Cursor, and to git's raw commit `timestamps`. All sources converted to UTC epoch float intervals. Intervals merged if gap ≤ threshold. Per-interval estimate is the raw duration (`end - start`), no buffer, no floor. The old 1.5h threshold + `max(duration + 0.5h, 0.5h)` formula is legacy — it existed to compensate for reconciling against prompt-only timestamps, which undercounts real work whenever the agent kept executing after the last recorded prompt (confirmed on a real project: an apparently-isolated prompt had 1,343 agent-execution events in the following 50 minutes, invisible to `timestamps` alone). Still available via `git_sessions.py`'s default (non-`--raw`) mode for sources without activity-level granularity. `reconcile.py` also computes a supervised-vs-unattended split by default (`--presence-window-min`, default 10) — see "Supervised vs. unattended time" in the workflow section above. See [references/reconciliation.md](references/reconciliation.md) for the full underlying pseudocode, the session detection helper function, and the day-boundary bucketing helper for daily breakdowns.
 
 **Folder move detection:** `claude_messages.py`, `codex_messages.py`, and `cursor_messages.py` all scan known history for matching project names when 0 results are found at the provided path. Returns `alternate_paths` list. If non-empty, ask user to confirm, re-run with old path, merge timestamps. See [references/folder-move-detection.md](references/folder-move-detection.md) for detection logic and edge cases.
 

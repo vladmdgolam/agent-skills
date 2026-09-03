@@ -69,7 +69,7 @@ These are per-session conversation files. Each entry has:
 - `type`: `"user"` or `"assistant"`
 - `timestamp`: ISO 8601 string
 
-Filter: `type == "user"` AND `message.content` is NOT a `list[tool_result]` (those are tool outputs, not user prompts).
+Filter for prompt counting: `type == "user"` AND `message.content` is NOT a `list[tool_result]` (those are tool outputs, not user prompts).
 
 **Use these for sessions that predate `history.jsonl`** — older Claude Code versions did not write to history.
 
@@ -81,7 +81,13 @@ Always prefer `--project-path /abs/path` over `--filter name` for accurate match
 
 ### Output
 
-The script outputs a `timestamps` array of UTC epoch floats (point events). These are used in the reconciliation step to detect sessions via the gap threshold. Also includes `alternate_paths` when the provided path yields 0 results (see [folder-move-detection.md](./folder-move-detection.md)).
+Two timestamp arrays, both UTC epoch floats:
+- `timestamps` — user prompts only (same filter as above). Use for prompt-count metrics.
+- `activity_timestamps` — **every** `type == "user"` or `type == "assistant"` entry, including `tool_result` entries and assistant replies. Use this one for session/interval reconciliation, not `timestamps`.
+
+Why the split matters: a `tool_result` entry fires every time a tool call completes, and `assistant` entries fire on every reply/reasoning step — both are real evidence the agent was actively working, even though neither is a "prompt." A session with one prompt at 14:00 and the next at 14:45 looks like a 0-duration point using `timestamps` alone; `activity_timestamps` will usually contain dozens of entries across that same 45 minutes if the agent was actually running tools the whole time. Confirmed on a real project (Aug 2026): a single isolated Codex prompt with the next prompt 50 minutes later turned out to have 1,343 tool-call/reasoning events in between, with the largest actual idle gap being 36 seconds — i.e. the "0-duration" session was actually ~50 minutes of continuous work.
+
+Also includes `alternate_paths` when the provided path yields 0 results (see [folder-move-detection.md](./folder-move-detection.md)).
 
 ---
 
@@ -95,18 +101,25 @@ Each `.jsonl` file contains newline-delimited JSON entries of different types:
 
 | Entry type | Relevant fields | Purpose |
 |---|---|---|
-| `session_meta` (first entry) | `payload.cwd`, `payload.id` | Project directory + session UUID |
-| `event_msg` with `payload.type == "user_message"` | `payload.message` (string), `payload.text_elements`, `payload.images` | Actual user prompts |
-| `event_msg` with `payload.type == "agent_message"` | — | Assistant responses (skip) |
+| `session_meta` | `payload.cwd`, `payload.id` | Project directory + session UUID — **can recur mid-file**: long-lived/resumed Codex sessions carry on for days and may re-emit `session_meta`, sometimes for a different `cwd`. Don't assume it's set once at the top of the file. |
+| `event_msg` with `payload.type == "user_message"` | `payload.message` (string), `payload.text_elements`, `payload.images` | Actual user prompts — this is `timestamps` |
+| `response_item` (`reasoning`, `custom_tool_call`, `custom_tool_call_output`, `message`) | `timestamp` | Agent execution steps — tool calls, patches, replies |
+| `event_msg` with `payload.type` in `agent_message`, `patch_apply_end`, `token_count`, etc. | `timestamp` | More agent-execution markers |
 | `turn_context` | `cwd`, `model` | Turn boundaries |
+
+**All of the above (any type, as long as `cwd` matches) count as activity — this is `activity_timestamps`.** A single rollout file can be extremely dense: one real-world session produced 74k+ timestamped events across ~6 weeks of on-and-off use.
 
 ### Matching
 
-Filter by `session_meta.payload.cwd == abs_path` (or the alternate path if a folder move is detected).
+Filter by `session_meta.payload.cwd == abs_path` (or the alternate path if a folder move is detected). Because `session_meta` can recur with a different `cwd` inside one file (see above), the scanner tracks `cwd` continuously through the file rather than checking it once — a file that starts on an unrelated project and later switches to the target `cwd` (e.g. after a `codex resume` in a different directory) is still picked up correctly for the matching stretch.
 
 ### Output
 
-Same as `claude_messages.py`: a `timestamps` array of UTC epoch floats plus `alternate_paths` if applicable.
+Same split as `claude_messages.py`:
+- `timestamps` — `user_message` events only. Prompt-count metric.
+- `activity_timestamps` — every timestamped line while `cwd` matches, regardless of type. Reconciliation input.
+
+Plus `alternate_paths` if applicable.
 
 ---
 
@@ -161,4 +174,8 @@ The script collects from global storage first, then falls back to workspace stor
 
 ### Output
 
-Same as `claude_messages.py` and `codex_messages.py`: a `timestamps` array of UTC epoch floats, `daily` counts, `sessions_found`, and `alternate_paths` for folder-move detection. Also includes `sources` breakdown showing how many messages came from `global_storage` vs `workspace_storage`.
+Same split as `claude_messages.py` and `codex_messages.py`:
+- `timestamps` — `type=1` (user) bubbles / `role=="user"` legacy messages only. Prompt-count metric.
+- `activity_timestamps` — every bubble/message regardless of type or role. Reconciliation input. (`composer.composerData`'s `createdAt`/`lastUpdatedAt` have no role field, so they count toward both.)
+
+Plus `daily` counts, `sessions_found`, `alternate_paths` for folder-move detection, and a `sources` breakdown showing how many messages came from `global_storage` vs `workspace_storage`.

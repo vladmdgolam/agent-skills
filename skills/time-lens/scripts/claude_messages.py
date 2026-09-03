@@ -18,8 +18,21 @@ Output JSON:
     "project_path": "...",
     "total_user_messages": N,
     "daily": {"YYYY-MM-DD": count, ...},
-    "sources": {"history": N, "session_files": N}
+    "sources": {"history": N, "session_files": N},
+    "timestamps": [epoch_float, ...],           # user prompts only — for prompt counts
+    "activity_timestamps": [epoch_float, ...]   # user + assistant entries — for hour reconciliation
   }
+
+Why activity_timestamps exists: history.jsonl and the user-only session
+entries mark only when a prompt was SENT, not how long Claude then spent
+working (tool calls, edits, reasoning) before the next prompt. A lone prompt
+with nothing after it for 40+ minutes looks like a 0-duration session even
+though the assistant may have been actively running that whole time. Session
+files also contain type="assistant" entries with their own timestamps;
+pulling those in gives session-detection something to anchor the *end* of
+real activity on, not just the human's last keystroke. Use
+`activity_timestamps` for session/interval detection; keep `timestamps` for
+prompt-count metrics.
 """
 
 import os
@@ -104,9 +117,14 @@ def collect_from_session_files(project_dirs, project_path, seen_ts):
     """
     Collect actual user prompts from session .jsonl files.
     Skips entries already accounted for in history (dedup by rounded timestamp).
-    Returns {date: count}.
+    Also collects activity_timestamps: every user AND assistant entry with a
+    valid timestamp and matching cwd, regardless of dedup against history
+    (history.jsonl only ever has user prompts, so there's nothing to dedup
+    assistant entries against).
+    Returns ({date: count}, sorted activity_timestamps).
     """
     daily = defaultdict(int)
+    activity_timestamps = []
 
     for proj_dir in project_dirs:
         for jsonl_file in glob.glob(os.path.join(proj_dir, "*.jsonl")):
@@ -121,20 +139,29 @@ def collect_from_session_files(project_dirs, project_path, seen_ts):
                         except json.JSONDecodeError:
                             continue
 
-                        if obj.get("type") != "user":
+                        entry_type = obj.get("type")
+                        if entry_type not in ("user", "assistant"):
                             continue
                         if project_path and obj.get("cwd") != project_path:
-                            continue
-                        if not is_real_prompt(obj):
                             continue
 
                         ts_str = obj.get("timestamp", "")
                         try:
                             dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                            ts_rounded = round(dt.timestamp())
+                            ts_epoch = dt.timestamp()
+                            ts_rounded = round(ts_epoch)
                             date = dt.strftime("%Y-%m-%d")
                         except Exception:
                             continue
+
+                        # Every user or assistant entry counts as activity —
+                        # including type="user" tool_result entries (fired
+                        # whenever a tool call completes, so they're a real
+                        # signal of the agent actively working, not idle time).
+                        activity_timestamps.append(ts_epoch)
+
+                        if entry_type == "assistant" or not is_real_prompt(obj):
+                            continue  # not a real user prompt — activity only, no prompt count
 
                         if ts_rounded not in seen_ts:
                             seen_ts.add(ts_rounded)
@@ -142,7 +169,7 @@ def collect_from_session_files(project_dirs, project_path, seen_ts):
             except (IOError, PermissionError):
                 pass
 
-    return daily
+    return daily, sorted(activity_timestamps)
 
 
 def main():
@@ -211,8 +238,11 @@ def main():
     # Primary: history.jsonl (one entry per prompt, most reliable)
     daily_history, seen_ts = collect_from_history(args.project_path)
 
-    # Fallback: session files for prompts not captured in history
-    daily_sessions = collect_from_session_files(project_dirs, args.project_path, seen_ts)
+    # Fallback: session files for prompts not captured in history, plus
+    # activity_timestamps (user + assistant) for hour reconciliation
+    daily_sessions, activity_timestamps = collect_from_session_files(
+        project_dirs, args.project_path, seen_ts
+    )
 
     # Merge
     all_dates = set(daily_history) | set(daily_sessions)
@@ -220,6 +250,12 @@ def main():
         date: daily_history.get(date, 0) + daily_sessions.get(date, 0)
         for date in sorted(all_dates)
     }
+
+    # activity_timestamps only comes from session files (history.jsonl has no
+    # assistant entries), so fold in the history-only prompt timestamps too —
+    # otherwise prompts captured solely via history.jsonl (predates a given
+    # session file, or session file missing) would be invisible to reconciliation.
+    activity_timestamps = sorted(set(activity_timestamps) | seen_ts)
 
     print(json.dumps({
         "project_path": args.project_path or args.filter,
@@ -230,8 +266,10 @@ def main():
             "history": sum(daily_history.values()),
             "session_files": sum(daily_sessions.values()),
         },
-        # Raw sorted timestamps (Unix epoch floats) — use for merged session detection
+        # User-prompt-only timestamps — for prompt-count metrics
         "timestamps": sorted(seen_ts),
+        # User + assistant timestamps — for session/interval reconciliation
+        "activity_timestamps": activity_timestamps,
     }, indent=2))
 
 

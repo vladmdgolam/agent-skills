@@ -24,10 +24,17 @@ Output JSON:
     "project_path": "...",
     "total_user_messages": N,
     "daily": {"YYYY-MM-DD": count, ...},
-    "timestamps": [epoch_float, ...],
+    "timestamps": [epoch_float, ...],           # user bubbles only (type=1) — for prompt counts
+    "activity_timestamps": [epoch_float, ...],  # every bubble incl. assistant — for hour reconciliation
     "sessions_found": N,
     "sources": {"global_storage": N, "workspace_storage": N}
   }
+
+activity_timestamps includes non-user bubbles (assistant replies, tool-call
+steps) so a lone user prompt with a long assistant turn after it doesn't
+collapse to a 0-duration session — same rationale as claude_messages.py and
+codex_messages.py. Use `activity_timestamps` for session/interval detection;
+keep `timestamps` for prompt-count metrics.
 """
 
 import os
@@ -125,14 +132,15 @@ def _extract_bubble_timestamp(bubble):
 def collect_from_global_storage(cursor_dir, project_path=None, name_filter=None):
     """
     Collect user prompt timestamps from global storage's cursorDiskKV table.
-    Returns (daily_counts, timestamps, sessions_found).
+    Returns (daily_counts, timestamps, sessions_found, activity_timestamps).
     """
     global_db = os.path.join(cursor_dir, "globalStorage", "state.vscdb")
     if not os.path.exists(global_db):
-        return {}, [], 0
+        return {}, [], 0, []
 
     daily = defaultdict(int)
     timestamps = []
+    activity_timestamps = []
     sessions_found = 0
 
     try:
@@ -172,9 +180,11 @@ def collect_from_global_storage(cursor_dir, project_path=None, name_filter=None)
             except (json.JSONDecodeError, IndexError, AttributeError):
                 continue
 
-        # For each matching session, get user-message bubble data
+        # For each matching session, get bubble data (all types = activity;
+        # type=1 = user message = prompt count)
         for session_id in matching_session_ids:
             session_ts = []
+            session_activity = []
             cur.execute(
                 "SELECT value FROM cursorDiskKV WHERE key LIKE ?",
                 (f"bubbleId:{session_id}:%",),
@@ -186,26 +196,28 @@ def collect_from_global_storage(cursor_dir, project_path=None, name_filter=None)
                 except json.JSONDecodeError:
                     continue
 
-                # Only count user messages (type=1)
-                if bubble.get("type") != 1:
+                ts_epoch = _extract_bubble_timestamp(bubble)
+                if ts_epoch is None:
                     continue
 
-                ts_epoch = _extract_bubble_timestamp(bubble)
-                if ts_epoch is not None:
+                session_activity.append(ts_epoch)
+                if bubble.get("type") == 1:  # user message only
                     session_ts.append(ts_epoch)
 
-            if session_ts:
+            if session_ts or session_activity:
                 sessions_found += 1
                 for ts in session_ts:
                     date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
                     daily[date] += 1
                     timestamps.append(ts)
+                activity_timestamps.extend(session_activity)
 
         conn.close()
     except (sqlite3.Error, IOError):
         pass
 
-    return dict(sorted(daily.items())), sorted(timestamps), sessions_found
+    return (dict(sorted(daily.items())), sorted(timestamps), sessions_found,
+            sorted(activity_timestamps))
 
 
 def collect_from_workspace_storage(cursor_dir, project_path=None,
@@ -214,17 +226,18 @@ def collect_from_workspace_storage(cursor_dir, project_path=None,
     Fallback: collect timestamps from per-workspace state.vscdb databases.
     Reads composer.composerData and legacy chatdata keys from ItemTable.
     Deduplicates against already-seen timestamps from global storage.
-    Returns (daily_counts, timestamps, sessions_found).
+    Returns (daily_counts, timestamps, sessions_found, activity_timestamps).
     """
     if seen_ts is None:
         seen_ts = set()
 
     ws_mappings = scan_workspace_mappings(cursor_dir)
     if not ws_mappings:
-        return {}, [], 0
+        return {}, [], 0, []
 
     daily = defaultdict(int)
     timestamps = []
+    activity_timestamps = []
     sessions_found = 0
 
     for ws_id, ws_path in ws_mappings.items():
@@ -258,6 +271,7 @@ def collect_from_workspace_storage(cursor_dir, project_path=None,
                             if (ts_ms and isinstance(ts_ms, (int, float))
                                     and ts_ms > 1_000_000_000_000):
                                 ts_epoch = ts_ms / 1000.0
+                                activity_timestamps.append(ts_epoch)  # no role field — count as activity regardless
                                 ts_rounded = round(ts_epoch)
                                 if ts_rounded not in seen_ts:
                                     seen_ts.add(ts_rounded)
@@ -285,21 +299,23 @@ def collect_from_workspace_storage(cursor_dir, project_path=None,
                     for session in data.get("chatSessions", data.get("tabs", [])):
                         has_msgs = False
                         for msg in session.get("messages", session.get("bubbles", [])):
+                            ts_ms = msg.get("timestamp")
+                            if not (ts_ms and isinstance(ts_ms, (int, float))
+                                    and ts_ms > 1_000_000_000_000):
+                                continue
+                            ts_epoch = ts_ms / 1000.0
+                            activity_timestamps.append(ts_epoch)  # every role counts as activity
                             if msg.get("role") != "user":
                                 continue
-                            ts_ms = msg.get("timestamp")
-                            if (ts_ms and isinstance(ts_ms, (int, float))
-                                    and ts_ms > 1_000_000_000_000):
-                                ts_epoch = ts_ms / 1000.0
-                                ts_rounded = round(ts_epoch)
-                                if ts_rounded not in seen_ts:
-                                    seen_ts.add(ts_rounded)
-                                    date = datetime.fromtimestamp(
-                                        ts_epoch, tz=timezone.utc
-                                    ).strftime("%Y-%m-%d")
-                                    daily[date] += 1
-                                    timestamps.append(ts_epoch)
-                                    has_msgs = True
+                            ts_rounded = round(ts_epoch)
+                            if ts_rounded not in seen_ts:
+                                seen_ts.add(ts_rounded)
+                                date = datetime.fromtimestamp(
+                                    ts_epoch, tz=timezone.utc
+                                ).strftime("%Y-%m-%d")
+                                daily[date] += 1
+                                timestamps.append(ts_epoch)
+                                has_msgs = True
                         if has_msgs:
                             sessions_found += 1
                 except json.JSONDecodeError:
@@ -309,7 +325,8 @@ def collect_from_workspace_storage(cursor_dir, project_path=None,
         except (sqlite3.Error, IOError):
             pass
 
-    return dict(sorted(daily.items())), sorted(timestamps), sessions_found
+    return (dict(sorted(daily.items())), sorted(timestamps), sessions_found,
+            sorted(activity_timestamps))
 
 
 def find_alternate_paths(cursor_dir, project_path):
@@ -380,13 +397,13 @@ def main():
     cursor_dir = get_cursor_data_dir()
 
     # Primary: global storage (per-message timestamps from cursorDiskKV)
-    daily_global, ts_global, sessions_global = collect_from_global_storage(
+    daily_global, ts_global, sessions_global, activity_global = collect_from_global_storage(
         cursor_dir, args.project_path, args.filter
     )
 
     # Fallback: workspace storage (session-level + legacy per-message timestamps)
     seen_ts = {round(t) for t in ts_global}
-    daily_ws, ts_ws, sessions_ws = collect_from_workspace_storage(
+    daily_ws, ts_ws, sessions_ws, activity_ws = collect_from_workspace_storage(
         cursor_dir, args.project_path, args.filter, seen_ts
     )
 
@@ -397,12 +414,14 @@ def main():
         for date in sorted(all_dates)
     }
     all_timestamps = sorted(set(ts_global + ts_ws))
+    all_activity_timestamps = sorted(set(activity_global + activity_ws))
 
     result = {
         "project_path": args.project_path or args.filter,
         "total_user_messages": sum(daily_merged.values()),
         "daily": daily_merged,
         "timestamps": all_timestamps,
+        "activity_timestamps": all_activity_timestamps,
         "sessions_found": sessions_global + sessions_ws,
         "sources": {
             "global_storage": sum(daily_global.values()),
