@@ -395,6 +395,60 @@ measure colors from pixels, or use the emission-probe pattern for field
 values. That answered "which node carries the preset color" faster than
 fighting the API.
 
+**Instead: try binary extraction first.** The values ARE in the .c4d
+binary and ARE readable via direct parsing — see
+`~/cinema4d-mcp/scripts/extract_rs_binary.py` (standalone Python, no
+C4D/RS license needed). Handles float64 and int32 scalar port values
+in both C4D serialization formats (`10_1c` and `10_1f`). This is
+faster, cheaper, and more reliable than the API.
+
+```bash
+python3 ~/cinema4d-mcp/scripts/extract_rs_binary.py scene.c4d
+```
+
+### Binary format decoded
+
+Two serialization formats exist in .c4d files:
+
+| Format | Header marker | Value marker | Found in |
+|--------|--------------|--------------|----------|
+| Newer | `10 1c 10 1c` (16 bytes) | `10 21` + type | Probe/bake files |
+| Older | `10 1f 10 1f` (16 bytes) | `10 24` + type | Scene `_002.c4d` files |
+
+Type bytes: `0x11` = float64 (IEEE 754 LE, 8 bytes), `0x12` = int32
+(LE, 4 bytes). After the value: 2-byte big-endian uint16 = next port
+path length (used as alignment validation). For `vec3`/color values:
+type byte `0x22` → 3 × float64 RGB.
+
+A third format (`10 20 10 20`, 16-byte header + `10 28` value marker)
+encodes **node graph connections** (wiring between ports), not port
+values — still being RE'd.
+
+### What can be extracted
+
+| Category | Status | Notes |
+|----------|--------|-------|
+| Scalar float64/int32 | ✅ Fully working | brightness, contrast, animation_speed, coord_scale, seed, refr_weight, refl_roughness, rotate, etc. |
+| Ramp color stops | ✅ Decoded | type `0x22` vec3 color + position + interpolation + bias per stop |
+| `coord_offset` | ⚠️ Always default | (0, 0, ~0.054) in all tested scenes — not explicitly stored |
+| Material colors | ❌ Not direct values | `base_color` is a node connection, not a stored RGB; use `GetPreview(0)` or emission probes |
+| Connection wiring | ❌ 10_20 format | Serializes which node output wires to which node input |
+
+### Extracted values across all 4 scene files
+
+See `docs/c4d-binary-reverse-engineering.md` in music-shader for the
+full table. Key shared values:
+- `brightness`: 0.054 (all scenes)
+- `contrast`: 0.428 or 0.238 (per noise node)
+- `animation_speed`: 2.85 or 1.1 (two noise nodes in Skriptonit)
+- `coord_scale_global`: ~26-27 (all scenes)
+- `refr_weight`: 0.581, `refl_roughness`: 0.336
+- `level` (color correction): 1.0-1.5
+
+For color/vec3/ramp types the binary reader doesn't handle yet, use the
+emission-probe method or `GetPreview(0)` (cached thumbnail) for coarse
+color data.
+
 **To find specific node types**, use:
 ```python
 result = maxon.GraphModelHelper.FindNodesByAssetId(
