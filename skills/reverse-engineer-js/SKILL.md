@@ -1,6 +1,6 @@
 ---
 name: reverse-engineer-js
-description: "Reverse-engineer minified or obfuscated JavaScript bundles. Primary tool: humanify (humanifyjs) — uses an LLM to rename mangled identifiers back to meaningful names. Default model: gemini-3.1-flash-lite-preview. Use when the user says 'deobfuscate this bundle', 'humanify this', 'rename minified vars', 'reverse engineer this JS', 'what does bundle.js do', or is working in a project with a deobfuscated `og/` or `modules/` folder fed by humanify. Covers humanify CLI invocation, the pseudo-TTY workaround for cursorTo crashes, single-module extraction from a bundle, and chaining with beautifiers."
+description: "Reverse-engineer minified or obfuscated JavaScript bundles. Primary tool: humanify (humanifyjs) — uses an LLM to rename mangled identifiers back to meaningful names. Default model: gemini-3.8-flash. Use when the user says 'deobfuscate this bundle', 'humanify this', 'rename minified vars', 'reverse engineer this JS', 'what does bundle.js do', or is working in a project with a deobfuscated `og/` or `modules/` folder fed by humanify. Covers humanify CLI invocation, the pseudo-TTY workaround for cursorTo crashes, single-module extraction from a bundle, and chaining with beautifiers."
 ---
 
 # Reverse Engineer JS
@@ -23,7 +23,7 @@ Always check for a sourcemap (`bundle.js.map` or `sourceMappingURL` comment in t
 Use Gemini with the lite preview model unless the user says otherwise:
 
 ```bash
-npx humanifyjs gemini -m "gemini-3.1-flash-lite-preview" -o <outputDir> <inputFile>
+npx humanifyjs gemini -m "gemini-3.8-flash" -o <outputDir> <inputFile>
 ```
 
 Requires `GEMINI_API_KEY` in env (the project's root `.env` is the usual place).
@@ -47,7 +47,7 @@ humanify calls `process.stdout.cursorTo(...)` for its progress bar. In Claude Co
 Wrap the call in `script -q /dev/null`:
 
 ```bash
-script -q /dev/null npx humanifyjs gemini -m "gemini-3.1-flash-lite-preview" -o "$OUT" "$IN"
+script -q /dev/null npx humanifyjs gemini -m "gemini-3.8-flash" -o "$OUT" "$IN"
 ```
 
 (macOS/BSD `script` syntax. On Linux: `script -qc "<cmd>" /dev/null`.)
@@ -61,7 +61,7 @@ humanify always writes its result as `<outputDir>/deobfuscated.js` regardless of
 humanify processes top-level declarations sequentially with one LLM call each. A 5 MB bundle can take 30+ minutes. Strategies:
 - Run on **single modules** extracted from the bundle, not the whole thing
 - Pre-split with `webcrack` first if the bundle is webpacked
-- Use the cheapest competent model (`gemini-3.1-flash-lite-preview` is the current sweet spot)
+- Use the cheapest competent model (`gemini-3.8-flash` is the current sweet spot)
 
 ## 4. Keep an archive of the original
 
@@ -75,7 +75,7 @@ When the bundle is small (<500 KB) or you have time:
 mkdir -p archive out
 cp bundle.js archive/bundle.original.js
 script -q /dev/null npx humanifyjs gemini \
-  -m "gemini-3.1-flash-lite-preview" \
+  -m "gemini-3.8-flash" \
   -o out bundle.js
 # result: out/deobfuscated.js
 ```
@@ -89,7 +89,7 @@ Common in fxhash / generative-art bundles: a single bundle contains many `id: (p
 1. **Identify the module ID** — search the bundle for distinctive strings, then trace back to the enclosing `<id>: (e, t, n) => {` opener.
 2. **Extract the module body** — match the opener, count braces (respecting strings) until the matching `}`.
 3. **Wrap as a standalone arrow** — write `(e, t, n) => { <body> }` to a temp file. humanify needs valid top-level code.
-4. **Run humanify** — `script -q /dev/null npx humanifyjs gemini -m "gemini-3.1-flash-lite-preview" -o "$OUT" "$IN"`.
+4. **Run humanify** — `script -q /dev/null npx humanifyjs gemini -m "gemini-3.8-flash" -o "$OUT" "$IN"`.
 5. **Unwrap** — strip the `(e, t, n) => { ... }` shell back off the result.
 6. **Save and stub** — write the deobf'd body to `modules/module_<id>_<name>.js`, replace the body in the bundle with a stub like `<id>: (e, t, n) => { window.DEOBF[<id>](e, t, n); }`.
 
@@ -103,7 +103,7 @@ When dealing with a webpack bundle, [webcrack](https://github.com/j4k0xb/webcrac
 npx webcrack bundle.js -o webcracked/
 # Then humanify each module of interest:
 script -q /dev/null npx humanifyjs gemini \
-  -m "gemini-3.1-flash-lite-preview" \
+  -m "gemini-3.8-flash" \
   -o humanified webcracked/modules/123.js
 ```
 
@@ -117,7 +117,7 @@ script -q /dev/null npx humanifyjs gemini \
 1. Check for sourcemap: `head -c 4096 bundle.js | tail -c 200` — look for `sourceMappingURL`. None? Continue.
 2. Confirm `GEMINI_API_KEY` in `.env`. Source it: `set -a; source .env; set +a`.
 3. Archive: `mkdir -p archive && cp bundle.js archive/bundle.original.js`.
-4. Run: `mkdir -p out && script -q /dev/null npx humanifyjs gemini -m "gemini-3.1-flash-lite-preview" -o out bundle.js`.
+4. Run: `mkdir -p out && script -q /dev/null npx humanifyjs gemini -m "gemini-3.8-flash" -o out bundle.js`.
 5. Beautify: `npx prettier --write out/deobfuscated.js`.
 
 **Result:** `out/deobfuscated.js` with renamed vars, ready to read.
