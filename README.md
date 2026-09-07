@@ -110,6 +110,26 @@ Expert guide for using the Figma Context MCP (Framelink) efficiently while avoid
 - Common anti-patterns that cause 429 lockouts
 - Alternative workflows when rate-limited (screenshots, manual export)
 
+### 🌉 figma-bridge
+
+Expert guide for the figma-bridge MCP (this fork of figma-mcp-bridge): live Figma reads through the plugin, no API limits, responses kept small enough to fit in context.
+
+**Use when:**
+- Any `mcp__figma-bridge__*` tool is about to be used
+- User says "see figma bridge", "I selected it in Figma", "match the figma"
+- Design-to-code work that references a Figma frame
+- Exporting screenshots or per-node JSON from Figma
+- Errors: "exceeds maximum allowed tokens", "outputPath must be inside the MCP server working directory", "No plugin connected for fileKey", "Unable to establish connection to Figma", "Invalid regex", "Node not found"
+
+**Covers:**
+- `list_files`-first handshake and passing `fileKey` everywhere
+- Read ladder: `get_design_context` → `find_nodes` → `get_node` with `depth` + `fields` (never `get_document`, rarely `get_selection`)
+- Field projections that worked in practice (text specs, bounds, fills)
+- Screenshot-to-disk workflow, `isolate`, `save_screenshots`, `save_children_json`
+- Node-id formats (colon vs hyphen, instance children) and stale-id recovery
+- Leader/follower cwd gotcha behind the `outputPath` error
+- Design-to-code loop that ends with a screenshot comparison
+
 ### 📚 apple-books-mcp
 
 Extracts highlights, annotations, and book data from Apple Books via MCP.
