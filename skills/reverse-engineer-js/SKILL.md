@@ -20,7 +20,7 @@ Always check for a sourcemap (`bundle.js.map` or `sourceMappingURL` comment in t
 
 # Default humanify invocation
 
-Use Gemini with the lite preview model unless the user says otherwise:
+Use Gemini unless the user says otherwise:
 
 ```bash
 npx humanifyjs gemini -m "gemini-3.8-flash" -o <outputDir> <inputFile>
@@ -61,7 +61,7 @@ humanify always writes its result as `<outputDir>/deobfuscated.js` regardless of
 humanify processes top-level declarations sequentially with one LLM call each. A 5 MB bundle can take 30+ minutes. Strategies:
 - Run on **single modules** extracted from the bundle, not the whole thing
 - Pre-split with `webcrack` first if the bundle is webpacked
-- Use the cheapest competent model (`gemini-3.8-flash` is the current sweet spot)
+- Pick the cheapest model that still reads the code well. `gemini-3.8-flash` is the default here; on a very large bundle a lite variant (`gemini-3.5-flash-lite`) cuts the per-declaration cost, at some accuracy cost on dense code
 
 ## 4. Keep an archive of the original
 
