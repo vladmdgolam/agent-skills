@@ -17,6 +17,19 @@ Search and manage AI coding agent conversation history across Claude Code, Codex
 
 $ARGUMENTS
 
+## Skill path resolution
+
+When the skill catalog shows a path such as `r0/agent-sessions/SKILL.md`, treat `r0` as a
+skill-root alias and resolve it from the current session's Skill roots table first. Do not
+prepend the alias literally to the filesystem path. The resolved path is:
+
+```text
+<resolved-skill-root>/agent-sessions/SKILL.md
+```
+
+The installed copy may be a symlink to the source repository; inspect the resolved target
+before editing or reinstalling the skill.
+
 ## Tools Available
 
 ### CLI: `agent-sessions`
