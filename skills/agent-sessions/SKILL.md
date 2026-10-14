@@ -120,7 +120,7 @@ open "/Applications/Claude Code History Viewer.app"
 | Agent | Location | Format |
 |-------|----------|--------|
 | Claude Code | `~/.claude/projects/<encoded>/*.jsonl` | JSONL with `type`, `message`, `cwd`, `sessionId`, `timestamp` |
-| Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | JSONL with `session_meta` (payload.id, payload.cwd) and `response_item` entries |
+| Codex | `~/.codex/state_5.sqlite` + `~/.codex/thread_history_1.sqlite`; older or migration-skipped rollouts in `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | SQLite `threads` metadata and `thread_items` messages; legacy JSONL fallback |
 | Gemini CLI | `~/.gemini/tmp/*/chats/session-*.json` | JSON with `sessionId`, `startTime`, `messages[]` array |
 | opencode | `~/.local/share/opencode/opencode.db` | SQLite tables: `session`, `message`, `part`, `project` |
 | Hermes Agent | `~/.hermes/state.db` | SQLite tables: `sessions`, `messages` |
@@ -129,6 +129,14 @@ open "/Applications/Claude Code History Viewer.app"
 Project mapping for Gemini: `~/.gemini/projects.json` maps absolute paths to project names.
 
 Cline sessions created with `cline --data-dir <path>` can be included by setting `AGENT_SESSIONS_CLINE_DATA_DIRS` to a colon-separated path list.
+
+Codex normally stores these databases under `~/.codex`. If Codex uses a custom home,
+set `CODEX_HOME`; the CLI and Sharingan reader honor it. Codex's
+`legacy_to_paginated_v1` migration moved thread metadata and transcripts into the two
+SQLite databases and removed successfully migrated rollout JSONLs. The CLI still scans
+remaining rollout files for sessions the migration skipped, and deduplicates them against
+SQLite thread IDs. SQLite reads are read-only; the CLI also checks WAL sidecars when
+refreshing its cache.
 
 ## Workflow
 
